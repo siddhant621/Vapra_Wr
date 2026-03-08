@@ -184,6 +184,104 @@ export async function getPendingPayouts() {
   }
 }
 
+export async function getDashboardStats() {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const now = new Date();
+  const monthsToShow = 6;
+  const startDate = new Date(now.getFullYear(), now.getMonth() - (monthsToShow - 1), 1);
+
+  const payouts = await db.payout.findMany({
+    where: {
+      status: "PROCESSED",
+      processedAt: {
+        gte: startDate,
+      },
+    },
+    select: {
+      netAmount: true,
+      processedAt: true,
+    },
+  });
+
+  const monthBuckets = Array.from({ length: monthsToShow }).map((_, idx) => {
+    const d = new Date(startDate);
+    d.setMonth(d.getMonth() + idx);
+    const label = d.toLocaleString("default", { month: "short" });
+    return { label, year: d.getFullYear(), month: d.getMonth(), total: 0 };
+  });
+
+  for (const payout of payouts) {
+    const date = new Date(payout.processedAt);
+    const bucket = monthBuckets.find(
+      (b) => b.year === date.getFullYear() && b.month === date.getMonth()
+    );
+    if (bucket) {
+      bucket.total += payout.netAmount;
+    }
+  }
+
+  const totalPayoutsReceived = monthBuckets.reduce((sum, b) => sum + b.total, 0);
+
+  return {
+    totalPayoutsReceived,
+    chartData: monthBuckets.map((b) => ({ label: b.label, value: b.total })),
+  };
+}
+
+export async function getAllBookings() {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  try {
+    const bookings = await db.booking.findMany({
+      orderBy: { scheduledAt: "desc" },
+      include: {
+        customer: true,
+        mechanic: true,
+        service: true,
+        vehicle: true,
+      },
+      take: 50,
+    });
+
+    return { bookings };
+  } catch (error) {
+    console.error("Failed to fetch bookings:", error);
+    throw new Error("Failed to fetch bookings");
+  }
+}
+
+export async function updateBookingStatus(formData) {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const bookingId = formData.get("bookingId");
+  const status = formData.get("status");
+
+  if (!bookingId || !status) {
+    throw new Error("Missing booking ID or status");
+  }
+
+  if (!["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"].includes(status)) {
+    throw new Error("Invalid status");
+  }
+
+  try {
+    await db.booking.update({
+      where: { id: bookingId },
+      data: { status },
+    });
+
+    revalidatePath("/admin");
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update booking status:", error);
+    throw new Error("Failed to update booking status");
+  }
+}
+
 /**
  * Approves a payout request and deducts credits from doctor's account
  */

@@ -11,8 +11,20 @@ import { creditBenefits, features, testimonials } from "@/lib/data";
 import { ArrowRight, Check, Wrench } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { getCurrentUser } from "@/actions/onboarding";
+import TrackAppointmentButton from "@/components/track-appointment-button";
 
-export default function Home() {
+export default async function Home() {
+  const user = await getCurrentUser();
+  const isAdmin = user?.role === "ADMIN";
+  const isCustomer = user?.role === "CUSTOMER";
+
+  const primaryLabel = isAdmin ? "Dashboard" : "Book Service";
+  const primaryHref = isAdmin ? "/admin" : "/onboarding";
+
+  const secondaryLabel = "Appointments";
+  const secondaryHref = isAdmin ? "/admin" : "/appointments";
+
   return (
     <div className="bg-background">
       <section className="relative overflow-hidden py-32">
@@ -34,15 +46,21 @@ export default function Home() {
                 maintain your vehicle’s long-term health.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 ">
-                <Button
-                  asChild
-                  size="lg"
-                  className="bg-orange-600 text-white hover:bg-orange-700"
-                >
-                  <Link href={"/onboarding"}>
-                    Get Started <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
+                {isAdmin ? (
+                  <Button
+                    asChild
+                    size="lg"
+                    className="bg-orange-600 text-white hover:bg-orange-700"
+                  >
+                    <Link href={primaryHref}>
+                      {primaryLabel} <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <TrackAppointmentButton href={primaryHref} source="home-hero-primary">
+                    {primaryLabel} <ArrowRight className="ml-2 h-4 w-4" />
+                  </TrackAppointmentButton>
+                )}
 
                 <Button
                   asChild
@@ -50,7 +68,7 @@ export default function Home() {
                   variant="outline"
                   className="bg-orange-700/30 hover:bg-muted/80"
                 >
-                  <Link href={"/services"}>Find services</Link>
+                  <Link href={secondaryHref}>{secondaryLabel}</Link>
                 </Button>
               </div>
             </div>
@@ -74,7 +92,7 @@ export default function Home() {
               How It Works
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              Our platform makes repairing accessible with just a few clicks
+              Our platform makes vehicle repairs accessible with just a few clicks.
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -112,13 +130,13 @@ export default function Home() {
               className="bg-orange-900/30 border-orange-700/30 px-4 py-1
             text-orange-400 text-sm font-medium mb-4"
             >
-              Affordable Repairing and maintainance
+              Affordable Repair and Maintenance
             </Badge>
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
               Service Plans
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              Choose the perfect service plan that fits your Vehicle needs
+              Choose the perfect service plan that fits your vehicle's needs.
             </p>
           </div>
 
@@ -219,9 +237,9 @@ export default function Home() {
                   Ready to take control of your vehicle's health?
                 </h2>
                 <p className="text-lg text-muted-foreground mb-8">
-                  Join thousands of users who have simplified their carts
-                  maintainance journey with our platform. Get started today and
-                  experience Reparing and Maintainance the way it should be.
+                  Join thousands of users who have simplified their car maintenance
+                  journey with our platform. Get started today and experience
+                  repair and maintenance the way it should be.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4">
                   <Button

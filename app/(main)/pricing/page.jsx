@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,24 +53,26 @@ export default function PricingPage() {
     },
   ];
 
+  const router = useRouter();
+
   const handleBooking = () => {
     // For customers, go into the simple flow (no mechanic selection page)
-    window.location.href = "/onboarding";
+    router.push("/onboarding");
   };
 
   return (
-    <div className="space-y-12">
+    <div className="container mx-auto px-4 py-12 space-y-12">
       <PageHeader 
         title="Our Service Pricing"
         description="Transparent pricing for quality automotive services at Vapra Workshop"
       />
 
       {/* Pricing Grid */}
-      <div className="grid md:grid-cols-3 gap-6">
+      <div className="grid md:grid-cols-3 gap-6 items-stretch">
         {packages.map((pkg, idx) => (
           <Card
             key={idx}
-            className={`relative border transition-all ${
+            className={`relative flex h-full flex-col border transition-all ${
               pkg.popular
                 ? "border-emerald-600/60 shadow-lg shadow-emerald-600/20 md:scale-105"
                 : "border-emerald-900/20 hover:border-emerald-900/40"
@@ -91,11 +94,11 @@ export default function PricingPage() {
               </div>
             </CardHeader>
 
-            <CardContent className="space-y-6">
+            <CardContent className="flex h-full flex-col justify-between space-y-6">
               <ul className="space-y-3">
                 {pkg.features.map((feature, idx) => (
-                  <li key={idx} className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-emerald-400 flex-shrink-0" />
+                  <li key={idx} className="flex items-start gap-3">
+                    <Check className="mt-1 h-5 w-5 text-emerald-400 flex-shrink-0" />
                     <span className="text-sm text-gray-300">{feature}</span>
                   </li>
                 ))}

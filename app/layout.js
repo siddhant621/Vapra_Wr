@@ -28,8 +28,8 @@ export default function RootLayout({ children }) {
              {/* header */}
              <Header />
 
-        <main className="min-h-screen">
-        {children}
+<main className="min-h-screen pt-24">
+          {children}
         </main>
 
         {/* footer */}
@@ -84,7 +84,7 @@ export default function RootLayout({ children }) {
                 <h3 className="text-xl font-bold text-emerald-400 mb-4">Location</h3>
                 <div className="rounded-lg overflow-hidden h-48">
                   <iframe
-                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3556.1234567890!2d73.31234567!3d27.9!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2sVapra%20Workshop!5e0!3m2!1sen!2sin!4v1234567890"
+                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3556.8678308235564!2d73.31108331508722!3d28.02254418820929!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3910be78780c65fb%3A0x66fe3d3cd4873c1c!2sJaisalmer%20Rd%2C%20opp.%20Masid%2C%20Chungi%20Chowki%2C%20Nathusar%20Bass%2C%20Bikaner%2C%20Rajasthan%20334001!5e0!3m2!1sen!2sin!4v1700000000000"
                     width="100%"
                     height="100%"
                     style={{ border: 0 }}

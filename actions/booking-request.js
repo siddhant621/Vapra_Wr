@@ -14,10 +14,18 @@ export async function createBookingRequest(formData) {
   const vehicleInfo = formData.get("vehicleInfo");
   const issueDescription = formData.get("issueDescription");
   const preferredDateRaw = formData.get("preferredDate");
+  const preferredTimeSlot = formData.get("preferredTimeSlot");
   const phone = formData.get("phone");
   const email = formData.get("email") || null;
 
-  if (!serviceName || !vehicleInfo || !issueDescription || !preferredDateRaw || !phone) {
+  if (
+    !serviceName ||
+    !vehicleInfo ||
+    !issueDescription ||
+    !preferredDateRaw ||
+    !preferredTimeSlot ||
+    !phone
+  ) {
     throw new Error("Missing required fields");
   }
 
@@ -40,6 +48,7 @@ export async function createBookingRequest(formData) {
         vehicleInfo,
         issueDescription,
         preferredDate,
+        preferredTimeSlot,
         phone,
         email,
         status: "PENDING",
@@ -57,6 +66,7 @@ export async function createBookingRequest(formData) {
       vehicleInfo,
       issueDescription,
       preferredDate,
+      preferredTimeSlot,
       phone,
       email,
       status: "PENDING",
@@ -88,4 +98,83 @@ export async function getBookingRequests() {
     return { requests: listBookingRequests(50), source: "memory" };
   }
 }
+
+export async function updateBookingRequestStatus(formData) {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const requestId = formData.get("requestId");
+  const status = formData.get("status");
+
+  if (!requestId || !status) {
+    throw new Error("Missing request ID or status");
+  }
+
+  if (!["PENDING", "REVIEWED", "ASSIGNED", "CLOSED"].includes(status)) {
+    throw new Error("Invalid status");
+  }
+
+  try {
+    await db.bookingRequest.update({
+      where: { id: requestId },
+      data: { status },
+    });
+
+    revalidatePath("/admin");
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update booking request status:", error);
+    throw new Error("Failed to update booking request status");
+  }
+}
+
+export async function cancelOwnBookingRequest(formData) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const requestId = formData.get("requestId");
+  if (!requestId) {
+    throw new Error("Missing request ID");
+  }
+
+  try {
+    const customer = await db.user.findUnique({
+      where: { clerkUserId: userId },
+      select: { id: true },
+    });
+
+    if (!customer) {
+      throw new Error("Customer not found");
+    }
+
+    const request = await db.bookingRequest.findUnique({
+      where: { id: requestId },
+      select: { id: true, customerId: true, status: true },
+    });
+
+    if (!request || request.customerId !== customer.id) {
+      throw new Error("You are not allowed to cancel this appointment");
+    }
+
+    if (request.status === "CLOSED") {
+      return { success: true, status: request.status };
+    }
+
+    if (!["PENDING", "REVIEWED", "ASSIGNED"].includes(request.status)) {
+      throw new Error("This appointment cannot be cancelled");
+    }
+
+    const updated = await db.bookingRequest.update({
+      where: { id: requestId },
+      data: { status: "CLOSED" },
+    });
+
+    revalidatePath("/appointments");
+    return { success: true, status: updated.status };
+  } catch (error) {
+    console.error("Failed to cancel booking request:", error);
+    throw new Error(error.message || "Failed to cancel appointment");
+  }
+}
+
 

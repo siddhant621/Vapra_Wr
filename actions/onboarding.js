@@ -27,6 +27,29 @@ export async function setUserRole(formData) {
     throw new Error("Invalid role selection");
   }
 
+  return await setRole({ userId, clerkUser, role });
+}
+
+export async function autoSetUserRole() {
+  const { userId } = await auth();
+
+  if (!userId) {
+    // If not authenticated, tell the client to send the user to sign-in
+    return { success: true, redirect: "/sign-in" };
+  }
+
+  const clerkUser = await currentUser();
+  if (!clerkUser) {
+    throw new Error("User not found in Clerk");
+  }
+
+  const email = clerkUser.emailAddresses[0]?.emailAddress;
+  const role = isAllowedAdminEmail(email) ? "ADMIN" : "CUSTOMER";
+
+  return await setRole({ userId, clerkUser, role });
+}
+
+async function setRole({ userId, clerkUser, role }) {
   try {
     // Admin allow-list (email-based)
     if (role === "ADMIN") {
@@ -64,17 +87,19 @@ export async function setUserRole(formData) {
       // Continue with redirect even if DB is unavailable
     }
 
-    // For customer role - simple update
+    // Redirect based on role
     if (role === "CUSTOMER") {
       revalidatePath("/");
       return { success: true, redirect: "/services" };
     }
 
-    // For admin role
     if (role === "ADMIN") {
       revalidatePath("/");
       return { success: true, redirect: "/admin" };
     }
+
+    // Fallback (should never happen)
+    return { success: true, redirect: "/" };
   } catch (error) {
     console.error("Failed to set user role:", error);
     throw new Error(`Failed to update user profile: ${error.message}`);
@@ -97,6 +122,9 @@ export async function getCurrentUser() {
     return null;
   }
 
+  const email = clerkUser.emailAddresses[0]?.emailAddress;
+  const shouldBeAdmin = isAllowedAdminEmail(email);
+
   try {
     let user = await db.user.findUnique({
       where: {
@@ -112,14 +140,29 @@ export async function getCurrentUser() {
           clerkUserId: userId,
           name,
           imageUrl: clerkUser.imageUrl,
-          email: clerkUser.emailAddresses[0].emailAddress,
+          email,
+          role: shouldBeAdmin ? "ADMIN" : "CUSTOMER",
         },
+      });
+    }
+
+    // Ensure admin allow list always yields admin role
+    if (shouldBeAdmin && user.role !== "ADMIN") {
+      user = await db.user.update({
+        where: { clerkUserId: userId },
+        data: { role: "ADMIN" },
       });
     }
 
     return user;
   } catch (error) {
     console.error("Failed to get user information:", error);
-    return null;
+    // If the DB is unavailable, still provide a minimal role response so front-end
+    // redirects properly based on the allow-list.
+    return {
+      clerkUserId: userId,
+      email,
+      role: shouldBeAdmin ? "ADMIN" : "CUSTOMER",
+    };
   }
 }

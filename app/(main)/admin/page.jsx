@@ -1,102 +1,82 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageHeader } from "@/components/page-header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BookingRequests } from "./components/booking-requests";
+import { PendingPayouts } from "./components/pending-payouts";
 import { getBookingRequests } from "@/actions/booking-request";
+import { getPendingPayouts, getDashboardStats } from "@/actions/admin";
 
 export const metadata = {
   title: "Admin Dashboard - Vapra Workshop",
-  description: "Admin dashboard for managing Vapra Workshop",
+  description: "Admin dashboard for managing appointments and payments",
 };
 
 export default async function AdminPage() {
-  let requests = [];
-  try {
-    const res = await getBookingRequests();
-    requests = (res?.requests || []).slice(0, 10);
-  } catch (e) {
-    requests = [];
-  }
+  const [bookingRequestsData, pendingPayoutsData, dashboardStats] =
+    await Promise.all([
+      getBookingRequests(),
+      getPendingPayouts(),
+      getDashboardStats(),
+    ]);
+
+  const maxChartValue = Math.max(...dashboardStats.chartData.map((d) => d.value), 1);
 
   return (
     <div className="space-y-8">
-      <PageHeader 
-        title="Admin Dashboard"
-        description="Manage your workshop operations"
-      />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="rounded-xl bg-slate-900/50 border border-slate-700 p-6">
+          <h2 className="text-lg font-semibold text-white">Payouts Received</h2>
+          <p className="mt-2 text-3xl font-bold text-emerald-200">
+            ₹{dashboardStats.totalPayoutsReceived.toLocaleString()}
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Total processed payouts in the last 6 months
+          </p>
+        </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Dashboard Overview */}
-        <Card className="border-emerald-900/20">
-          <CardHeader>
-            <CardTitle>Welcome, Admin</CardTitle>
-            <CardDescription>Dashboard Overview</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-gray-300 mb-4">
-              This is your admin dashboard for managing Vapra Workshop.
-            </p>
-            <ul className="space-y-2 text-sm text-gray-400">
-              <li>• Manage mechanics</li>
-              <li>• View bookings</li>
-              <li>• Process payouts</li>
-              <li>• View customer inquiries</li>
-            </ul>
-          </CardContent>
-        </Card>
-
-        {/* Booking Requests */}
-        <Card className="border-emerald-900/20">
-          <CardHeader>
-            <CardTitle>New Booking Requests</CardTitle>
-            <CardDescription>Latest customer service requests</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {requests.length === 0 ? (
-              <p className="text-sm text-gray-300">
-                No booking requests yet.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {requests.map((r) => (
+        <div className="rounded-xl bg-slate-900/50 border border-slate-700 p-6">
+          <h2 className="text-lg font-semibold text-white">Payout Trend</h2>
+          <div className="mt-4 grid grid-cols-6 gap-2 items-end">
+            {dashboardStats.chartData.map((point) => {
+              const height = (point.value / maxChartValue) * 100;
+              return (
+                <div key={point.label} className="flex flex-col items-center gap-2">
                   <div
-                    key={r.id}
-                    className="rounded-md border border-emerald-900/20 bg-muted/10 p-3"
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-medium text-white">
-                          {r.serviceName}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Phone: {r.phone} • Status: {r.status}
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(r.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                    <p className="mt-2 text-sm text-gray-300">
-                      {r.issueDescription}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    className="w-4 rounded-t-lg bg-emerald-400 transition-all"
+                    style={{ height: `${height}%` }}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {point.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
-        {/* Quick Stats */}
-        <Card className="border-emerald-900/20">
-          <CardHeader>
-            <CardTitle>Statistics</CardTitle>
-            <CardDescription>Coming Soon</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-gray-300">
-              Dashboard statistics and analytics will be available soon.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="rounded-xl bg-slate-900/50 border border-slate-700 p-6">
+          <h2 className="text-lg font-semibold text-white">Pending Payouts</h2>
+          <p className="mt-2 text-3xl font-bold text-amber-200">
+            {pendingPayoutsData.payouts.length}
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Payouts awaiting approval
+          </p>
+        </div>
       </div>
+
+      <Tabs defaultValue="requests">
+        <TabsList>
+          <TabsTrigger value="requests">Booking Requests</TabsTrigger>
+        <TabsTrigger value="payouts">Pending Payouts</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="requests" className="border-none p-0">
+        <BookingRequests requests={bookingRequestsData.requests || []} />
+        </TabsContent>
+
+        <TabsContent value="payouts" className="border-none p-0">
+          <PendingPayouts payouts={pendingPayoutsData.payouts || []} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

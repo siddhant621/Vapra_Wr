@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -12,11 +12,15 @@ import {
   ClipboardList,
   Loader2,
   Mail,
+  Mic,
+  MicOff,
   Phone,
+  Clock,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,15 +33,43 @@ export default function BookingRequestPage() {
   const searchParams = useSearchParams();
   const service = searchParams.get("service") || "Service";
 
+  const commonVehicles = [
+    "Maruti Suzuki Swift",
+    "Hyundai i20",
+    "Honda City",
+    "Tata Nexon",
+    "Mahindra Scorpio",
+    "Toyota Innova",
+    "Kia Seltos",
+    "MG Hector",
+    "Renault Kwid",
+    "Ford EcoSport",
+    "Other",
+  ];
+
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 26 }, (_, idx) => currentYear - idx);
+
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState({
     vehicleInfo: "",
     issueDescription: "",
     preferredDate: "",
+    preferredTimeSlot: "",
     phone: "",
     email: "",
   });
+
+  const [vehicleModel, setVehicleModel] = useState("");
+  const [customVehicle, setCustomVehicle] = useState("");
+  const [vehicleYear, setVehicleYear] = useState("");
+  const [customYear, setCustomYear] = useState("");
+
+  const [recording, setRecording] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [transcriptionStatus, setTranscriptionStatus] = useState("idle");
+  const recognitionRef = useRef(null);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -47,15 +79,74 @@ export default function BookingRequestPage() {
     }));
   };
 
+  useEffect(() => {
+    const SpeechRecognition =
+      typeof window !== "undefined" &&
+      (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+    if (SpeechRecognition) {
+      setSpeechSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-IN";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0]?.[0]?.transcript;
+        if (transcript) {
+          setFormData((prev) => ({
+            ...prev,
+            issueDescription: prev.issueDescription
+              ? `${prev.issueDescription} ${transcript}`
+              : transcript,
+          }));
+          setTranscriptionStatus("transcribed");
+        }
+      };
+
+      recognition.onend = () => {
+        setRecording(false);
+        setTranscriptionStatus((prev) => (prev === "listening" ? "idle" : prev));
+      };
+
+      recognition.onerror = () => {
+        setRecording(false);
+        setTranscriptionStatus("error");
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const startRecording = () => {
+    if (!recognitionRef.current || recording) return;
+    setRecording(true);
+    setTranscriptionStatus("listening");
+    recognitionRef.current.start();
+  };
+
+  const stopRecording = () => {
+    if (!recognitionRef.current || !recording) return;
+    recognitionRef.current.stop();
+    setRecording(false);
+    setTranscriptionStatus("idle");
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
+    const selectedVehicle = vehicleModel === "Other" ? customVehicle.trim() : vehicleModel;
+    const selectedYear = vehicleYear === "Other" ? customYear.trim() : vehicleYear;
+
+    const vehicleInfo = `${selectedYear ? `${selectedYear} ` : ""}${selectedVehicle}`.trim();
+
     try {
       if (
-        !formData.vehicleInfo ||
+        !vehicleInfo ||
         !formData.issueDescription ||
         !formData.preferredDate ||
+        !formData.preferredTimeSlot ||
         !formData.phone
       ) {
         toast.error("Please fill in all required fields");
@@ -65,9 +156,10 @@ export default function BookingRequestPage() {
 
       const payload = new FormData();
       payload.append("serviceName", service);
-      payload.append("vehicleInfo", formData.vehicleInfo);
+      payload.append("vehicleInfo", vehicleInfo);
       payload.append("issueDescription", formData.issueDescription);
       payload.append("preferredDate", formData.preferredDate);
+      payload.append("preferredTimeSlot", formData.preferredTimeSlot);
       payload.append("phone", formData.phone);
       payload.append("email", formData.email);
 
@@ -170,45 +262,154 @@ export default function BookingRequestPage() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="vehicleInfo" className="text-white">
-                    Vehicle Information{" "}
-                    <span className="text-emerald-500">*</span>
-                  </Label>
-                  <Input
-                    id="vehicleInfo"
-                    name="vehicleInfo"
-                    placeholder="e.g., 2020 Toyota Camry, Black"
-                    value={formData.vehicleInfo}
-                    onChange={handleInputChange}
-                    required
-                    className="bg-slate-900 border-emerald-900/30 placeholder:text-slate-500 focus:border-emerald-500"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Include year, make, model, and color if possible
-                  </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="vehicleModel" className="text-white">
+                      Vehicle Make & Model <span className="text-emerald-500">*</span>
+                    </Label>
+                    <select
+                      id="vehicleModel"
+                      name="vehicleModel"
+                      value={vehicleModel}
+                      onChange={(e) => setVehicleModel(e.target.value)}
+                      required
+                      className="w-full rounded-md border border-emerald-900/30 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500"
+                    >
+                      <option value="" disabled>
+                        Select make & model
+                      </option>
+                      {commonVehicles.map((vehicle) => (
+                        <option key={vehicle} value={vehicle}>
+                          {vehicle}
+                        </option>
+                      ))}
+                    </select>
+                    {vehicleModel === "Other" && (
+                      <Input
+                        id="customVehicle"
+                        name="customVehicle"
+                        placeholder="Enter your vehicle make/model"
+                        value={customVehicle}
+                        onChange={(e) => setCustomVehicle(e.target.value)}
+                        className="bg-slate-900 border-emerald-900/30 placeholder:text-slate-500 focus:border-emerald-500"
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Select a common vehicle, or choose Other to enter custom info.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="vehicleYear" className="text-white">
+                      Model Year <span className="text-emerald-500">*</span>
+                    </Label>
+                    <select
+                      id="vehicleYear"
+                      name="vehicleYear"
+                      value={vehicleYear}
+                      onChange={(e) => setVehicleYear(e.target.value)}
+                      required
+                      className="w-full rounded-md border border-emerald-900/30 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500"
+                    >
+                      <option value="" disabled>
+                        Select year
+                      </option>
+                      {yearOptions.map((year) => (
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      ))}
+                      <option value="Other">Other</option>
+                    </select>
+                    {vehicleYear === "Other" && (
+                      <Input
+                        id="customYear"
+                        name="customYear"
+                        placeholder="Enter model year"
+                        value={customYear}
+                        onChange={(e) => setCustomYear(e.target.value)}
+                        className="bg-slate-900 border-emerald-900/30 placeholder:text-slate-500 focus:border-emerald-500"
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Choose the year of your vehicle (or select Other to type it).
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="issueDescription" className="text-white">
                     Describe the Issue <span className="text-emerald-500">*</span>
                   </Label>
-                  <Textarea
-                    id="issueDescription"
-                    name="issueDescription"
-                    placeholder="Please describe the issue you're experiencing, any sounds, warning lights, or symptoms..."
-                    value={formData.issueDescription}
-                    onChange={handleInputChange}
-                    required
-                    className="bg-slate-900 border-emerald-900/30 h-32 placeholder:text-slate-500 focus:border-emerald-500"
-                  />
+
+                  <div className="flex flex-col sm:flex-row sm:items-start gap-2">
+                    <Textarea
+                      id="issueDescription"
+                      name="issueDescription"
+                      placeholder="Please describe the issue you're experiencing, any sounds, warning lights, or symptoms..."
+                      value={formData.issueDescription}
+                      onChange={handleInputChange}
+                      required
+                      className="flex-1 bg-slate-900 border-emerald-900/30 h-32 placeholder:text-slate-500 focus:border-emerald-500"
+                    />
+
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        type="button"
+                        variant={recording ? "outline" : "secondary"}
+                        onClick={recording ? stopRecording : startRecording}
+                        disabled={!speechSupported}
+                        className="min-w-[10rem] flex items-center justify-center gap-2"
+                      >
+                        {recording ? (
+                          <>
+                            <MicOff className="h-4 w-4" />
+                            Stop Recording
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="h-4 w-4" />
+                            Record Voice
+                          </>
+                        )}
+                      </Button>
+
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={
+                            transcriptionStatus === "listening"
+                              ? "default"
+                              : transcriptionStatus === "transcribed"
+                              ? "secondary"
+                              : transcriptionStatus === "error"
+                              ? "destructive"
+                              : "outline"
+                          }
+                        >
+                          {transcriptionStatus === "listening"
+                            ? "Listening..."
+                            : transcriptionStatus === "transcribed"
+                            ? "Transcribed"
+                            : transcriptionStatus === "error"
+                            ? "Error"
+                            : "Idle"}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {speechSupported
+                            ? "Speak to fill the issue field."
+                            : "Speech recognition not supported."}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
                   <p className="text-xs text-muted-foreground">
-                    Detailed information helps us prepare and assign the right mechanic
+                    Detailed information helps us prepare and assign the right mechanic.
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2 md:col-span-1">
                     <Label htmlFor="preferredDate" className="text-white">
                       Preferred Date <span className="text-emerald-500">*</span>
                     </Label>
@@ -226,7 +427,36 @@ export default function BookingRequestPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 md:col-span-1">
+                    <Label htmlFor="preferredTimeSlot" className="text-white">
+                      Preferred Time Slot <span className="text-emerald-500">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Clock className="absolute left-3 top-3 h-4 w-4 text-emerald-500 pointer-events-none" />
+                      <select
+                        id="preferredTimeSlot"
+                        name="preferredTimeSlot"
+                        value={formData.preferredTimeSlot}
+                        onChange={handleInputChange}
+                        required
+                        className="w-full rounded-md border border-emerald-900/30 bg-slate-900 pl-10 pr-3 py-2 text-sm text-white outline-none focus:border-emerald-500"
+                      >
+                        <option value="" disabled>
+                          Select a time slot
+                        </option>
+                        <option value="09:00 AM - 11:00 AM">09:00 AM - 11:00 AM</option>
+                        <option value="11:00 AM - 01:00 PM">11:00 AM - 01:00 PM</option>
+                        <option value="01:00 PM - 03:00 PM">01:00 PM - 03:00 PM</option>
+                        <option value="03:00 PM - 05:00 PM">03:00 PM - 05:00 PM</option>
+                        <option value="05:00 PM - 07:00 PM">05:00 PM - 07:00 PM</option>
+                      </select>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      We&apos;ll do our best to assign a mechanic in this window.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 md:col-span-1">
                     <Label htmlFor="phone" className="text-white">
                       Phone Number <span className="text-emerald-500">*</span>
                     </Label>
@@ -236,7 +466,7 @@ export default function BookingRequestPage() {
                         id="phone"
                         name="phone"
                         type="tel"
-                        placeholder="+1 (555) 000-0000"
+                        placeholder="+91 xxxxxxxxxx"
                         value={formData.phone}
                         onChange={handleInputChange}
                         required

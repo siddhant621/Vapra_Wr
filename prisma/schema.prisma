@@ -17,13 +17,16 @@ model User {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
   experience         Int?
-  specialization     String?
+  specialty          String?
+  credits            Int             @default(0)
   verificationStatus VerificationStatus @default(PENDING)
   customerBookings   Booking[]          @relation("CustomerBookings")
   mechanicBookings   Booking[]          @relation("MechanicBookings")
   bookingRequests    BookingRequest[]
   payments           Payment[]
   vehicles           Vehicle[]
+  payouts            Payout[]
+  creditTransactions CreditTransaction[]
 }
 
 model Vehicle {
@@ -96,8 +99,46 @@ model Payment {
   user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model Payout {
+  id           String       @id @default(uuid())
+  doctorId     String
+  doctor       User         @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  amount       Float
+  credits      Int
+  platformFee  Float
+  netAmount    Float
+  paypalEmail  String
+  status       PayoutStatus @default(PROCESSING)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  processedAt  DateTime?
+  processedBy  String?
+
+  @@index([status, createdAt])
+  @@index([doctorId, status])
+}
+
+enum PayoutStatus {
+  PROCESSING
+  PROCESSED
+}
+
+model CreditTransaction {
+  id        String          @id @default(uuid())
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int
+  type      TransactionType
+  createdAt DateTime        @default(now())
+}
+
+enum TransactionType {
+  ADMIN_ADJUSTMENT
+}
+
 enum UserRole {
   CUSTOMER
+  DOCTOR
   MECHANIC
   ADMIN
 }
@@ -143,6 +184,7 @@ model BookingRequest {
   vehicleInfo      String   @db.Text
   issueDescription String   @db.Text
   preferredDate    DateTime
+  preferredTimeSlot String?
   phone            String
   email            String?
   status           BookingRequestStatus @default(PENDING)

@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Vapra Workshop
 
-## Getting Started
+A garage service platform for booking automotive repairs, managing mechanics, and tracking appointments.
 
-First, run the development server:
+## 🚀 Getting Started
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Configure your environment variables (see `.env.example` or `.env`)
+
+3. Generate Prisma client and run migrations:
+
+```bash
+npm run prisma generate
+npm run prisma migrate dev
+```
+
+4. Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open http://localhost:3000 in your browser.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## 🧩 Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `app/` - Next.js App Router pages
+- `components/` - Shared UI components
+- `lib/` - Utilities, data, and Prisma client
+- `actions/` - Server actions (API-like functions)
+- `prisma/` - Database schema and migrations
 
-## Learn More
+## ✅ Key Features
 
-To learn more about Next.js, take a look at the following resources:
+- Online booking system for repairs and maintenance
+- Mechanic profiles and service listings
+- Credit-based payments and payouts
+- Video consultations (Vonage)
+- Clerk authentication
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🛠️ Notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Make sure `DATABASE_URL` is configured in your `.env` file.
+- Update `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` with your Clerk credentials.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Happy building! 🚗
