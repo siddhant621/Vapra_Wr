@@ -181,8 +181,8 @@ model BookingRequest {
   id               String   @id @default(uuid())
   customerId       String?
   serviceName      String
-  vehicleInfo      String   @db.Text
-  issueDescription String   @db.Text
+  vehicleInfo      String
+  issueDescription String
   preferredDate    DateTime
   preferredTimeSlot String?
   phone            String

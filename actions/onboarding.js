@@ -4,6 +4,7 @@ import { db } from "@/lib/prisma";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { isAllowedAdminEmail } from "@/lib/admin-access";
+import { safeFindUnique, safeCreate, safeUpdate } from "@/lib/db-utils";
 
 /**
  * Sets the user's role and related information
@@ -126,32 +127,32 @@ export async function getCurrentUser() {
   const shouldBeAdmin = isAllowedAdminEmail(email);
 
   try {
-    let user = await db.user.findUnique({
-      where: {
-        clerkUserId: userId,
-      },
-    });
+    let user = await safeFindUnique("user", { clerkUserId: userId });
 
     // Create user if they don't exist
     if (!user) {
       const name = `${clerkUser.firstName} ${clerkUser.lastName}`;
-      user = await db.user.create({
-        data: {
-          clerkUserId: userId,
-          name,
-          imageUrl: clerkUser.imageUrl,
-          email,
-          role: shouldBeAdmin ? "ADMIN" : "CUSTOMER",
-        },
+      user = await safeCreate("user", {
+        clerkUserId: userId,
+        name,
+        imageUrl: clerkUser.imageUrl,
+        email,
+        role: shouldBeAdmin ? "ADMIN" : "CUSTOMER",
       });
+    }
+
+    // If user is still null (database unavailable), return fallback
+    if (!user) {
+      return {
+        clerkUserId: userId,
+        email,
+        role: shouldBeAdmin ? "ADMIN" : "CUSTOMER",
+      };
     }
 
     // Ensure admin allow list always yields admin role
     if (shouldBeAdmin && user.role !== "ADMIN") {
-      user = await db.user.update({
-        where: { clerkUserId: userId },
-        data: { role: "ADMIN" },
-      });
+      user = await safeUpdate("user", { clerkUserId: userId }, { role: "ADMIN" });
     }
 
     return user;
