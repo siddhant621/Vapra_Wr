@@ -12,14 +12,22 @@ export default async function Header() {
   const email = clerkUser?.emailAddresses?.[0]?.emailAddress;
   const allowListed = isAllowedAdminEmail(email);
 
-  const isAdmin = Boolean(
-    allowListed ||
-      (clerkUser?.id &&
-        (await db.user.findUnique({
-          where: { clerkUserId: clerkUser.id },
-          select: { role: true },
-        }))?.role === "ADMIN")
-  );
+  let isAdmin = allowListed;
+
+  // Only check database if not already admin via email allow-list
+  if (!isAdmin && clerkUser?.id) {
+    try {
+      const user = await db.user.findUnique({
+        where: { clerkUserId: clerkUser.id },
+        select: { role: true },
+      });
+      isAdmin = user?.role === "ADMIN";
+    } catch (error) {
+      // Database unavailable - use fallback behavior
+      console.warn("Database unavailable, using fallback behavior");
+      isAdmin = false;
+    }
+  }
 
   return (
     <header className="fixed top-0 w-full border-b bg-background/80 backdrop-blur-md z-10 supports-[backdrop-filter]:bg-background/60">
