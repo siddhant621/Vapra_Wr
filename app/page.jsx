@@ -43,7 +43,7 @@ export default async function Home() {
               </h1>
               <p className="text-muted-foreground text-lg md:text-xl max-w-md">
                 A single platform to schedule services, monitor repairs, and
-                maintain your vehicle’s long-term health.
+                maintain your vehicle's long-term health.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 ">
                 {isAdmin ? (
@@ -80,6 +80,47 @@ export default async function Home() {
                 priority
                 className="object-cover md:pt-14 rounded-xl"
               />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Image Slider Section */}
+      <section className="py-16 bg-gradient-to-r from-orange-950/30 to-orange-900/20">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              Our Gallery
+            </h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              Explore our work and services through our image gallery
+            </p>
+          </div>
+          
+          <div className="relative overflow-hidden">
+            <div className="flex animate-slider gap-4">
+              {/* First set of images */}
+              {["/vapra1.jpeg", "/vapra2.jpeg", "/vapra3.jpeg", "/vapra4.jpeg", "/vapra5jpeg.jpeg", "/vapra6.jpeg", "/vapra7.jpeg", "/vapra8.jpeg", "/vapra9.jpeg", "/vapra10.jpeg", "/vapra11.jpeg", "/vapra12.jpeg"].map((src, index) => (
+                <div key={`first-${index}`} className="flex-shrink-0 w-72 h-48 relative rounded-lg overflow-hidden">
+                  <Image
+                    src={src}
+                    alt={`Gallery image ${index + 1}`}
+                    fill
+                    className="object-cover hover:scale-110 transition-transform duration-500"
+                  />
+                </div>
+              ))}
+              {/* Duplicate set for seamless loop */}
+              {["/vapra1.jpeg", "/vapra2.jpeg", "/vapra3.jpeg", "/vapra4.jpeg", "/vapra5jpeg.jpeg", "/vapra6.jpeg", "/vapra7.jpeg", "/vapra8.jpeg", "/vapra9.jpeg", "/vapra10.jpeg", "/vapra11.jpeg", "/vapra12.jpeg"].map((src, index) => (
+                <div key={`second-${index}`} className="flex-shrink-0 w-72 h-48 relative rounded-lg overflow-hidden">
+                  <Image
+                    src={src}
+                    alt={`Gallery image ${index + 1}`}
+                    fill
+                    className="object-cover hover:scale-110 transition-transform duration-500"
+                  />
+                </div>
+              ))}
             </div>
           </div>
         </div>

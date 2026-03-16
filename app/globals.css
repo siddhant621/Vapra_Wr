@@ -165,5 +165,23 @@
          pb-1 pr-2;
 }
 
+/* Image Slider Animation */
+@keyframes slider {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-slider {
+  animation: slider 30s linear infinite;
+}
+
+.animate-slider:hover {
+  animation-play-state: paused;
+}
+
 
 
