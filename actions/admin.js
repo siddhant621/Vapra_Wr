@@ -52,6 +52,8 @@ export async function createMechanic(formData) {
 
   try {
     // Create or update mechanic (upsert by email)
+    const mechanicClerkId = `admin-created-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
     const user = await db.user.upsert({
       where: { email },
       update: {
@@ -63,6 +65,7 @@ export async function createMechanic(formData) {
       },
       create: {
         email,
+        clerkUserId: mechanicClerkId,
         name,
         role: "MECHANIC",
         specialty,
@@ -168,6 +171,38 @@ export async function getMechanicsWithWorkStatus() {
   } catch (error) {
     console.error("Failed to fetch mechanics with work status:", error);
     return { mechanics: [], error: "Database unavailable" };
+  }
+}
+
+/**
+ * Approve or set verification status for mechanic
+ */
+export async function setMechanicVerification(formData) {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const mechanicId = formData.get("mechanicId");
+  const status = formData.get("status");
+
+  if (!mechanicId || !["PENDING", "VERIFIED", "REJECTED"].includes(status)) {
+    throw new Error("Invalid mechanic status");
+  }
+
+  try {
+    await db.user.update({
+      where: { id: mechanicId },
+      data: {
+        verificationStatus: status,
+      },
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/admin/manage");
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to set mechanic verification status:", error);
+    throw new Error(`Failed to set mechanic verification: ${error.message}`);
   }
 }
 

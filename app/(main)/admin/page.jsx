@@ -1,5 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { ManageMechanics } from "@/app/(main)/admin/components/manage-mechanics";
+import { ServiceRequestsManager } from "@/app/(main)/admin/components/service-requests-manager";
 import { db } from "@/lib/prisma";
 import { format } from "date-fns";
 
@@ -70,8 +72,23 @@ export default async function AdminPage() {
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-900 to-slate-800 p-8">
       <div className="max-w-7xl mx-auto space-y-8">
-        
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="flex flex-wrap items-center gap-3 border border-white/10 rounded-2xl bg-white/5 p-4">
+          <a
+            href="#dashboard"
+            className="rounded-lg bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30"
+          >
+            Dashboard
+          </a>
+          <a
+            href="/admin/manage"
+            className="rounded-lg bg-blue-500/20 px-4 py-2 text-sm font-semibold text-blue-200 hover:bg-blue-500/30"
+          >
+            Manage
+          </a>
+        </div>
+
+        <section id="dashboard">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="group p-8 rounded-3xl bg-blue-500/10 border-2 border-blue-500/30 hover:border-blue-400 transition-all backdrop-blur-sm">
             <div className="text-blue-300 mb-3 text-lg font-semibold">Mechanics</div>
             <div className="text-4xl font-black text-white">{dashboardStats.totalMechanics}</div>
@@ -156,37 +173,7 @@ export default async function AdminPage() {
             </TabsContent>
 
             <TabsContent value="requests" className="mt-0">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {serviceRequests.length === 0 ? (
-                  <div className="col-span-full text-center py-14 text-slate-300 bg-white/5 rounded-2xl border border-dashed border-white/10">
-                    No service requests found.
-                  </div>
-                ) : (
-                  serviceRequests.map((req) => (
-                    <div key={req.id} className="group bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 p-6 transition-all hover:border-emerald-400 hover:bg-white/10">
-                      <div className="flex items-start justify-between mb-4">
-                        <h4 className="font-bold text-xl text-white">{req.serviceName}</h4>
-                        <Badge className={
-                          req.status === "PENDING" ? "bg-amber-500/20 text-amber-300 border-amber-500/30" :
-                          req.status === "COMPLETED" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" :
-                          req.status === "CANCELLED" ? "bg-slate-500/20 text-slate-300 border-slate-500/30" :
-                          "bg-blue-500/20 text-blue-300 border-blue-500/30"
-                        }>
-                          {req.status}
-                        </Badge>
-                      </div>
-                      <p className="text-slate-200 mb-2 text-sm">{req.vehicleInfo}</p>
-                      <p className="text-slate-200 text-sm mb-2">"{req.issueDescription}"</p>
-                      <p className="text-slate-400 text-xs mb-3">Preferred: {format(new Date(req.preferredDate), "MMM d, yyyy")}{req.preferredTimeSlot ? ` @ ${req.preferredTimeSlot}` : ""}</p>
-                      <div className="text-slate-400 text-xs space-y-1">
-                        <div>{req.customerId ? "Registered user" : "Guest"} • {req.email || "No email"}</div>
-                        <div>{req.phone}</div>
-                        <div className="text-xs text-slate-300">Requested at {format(new Date(req.createdAt), "MMM d, yyyy h:mm a")}</div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+              <ServiceRequestsManager requests={serviceRequests} />
             </TabsContent>
 
             <TabsContent value="payouts" className="mt-0">
@@ -219,7 +206,8 @@ export default async function AdminPage() {
             </TabsContent>
           </Tabs>
         </div>
-      </div>
+      </section>
     </div>
+  </div>
   );
 }

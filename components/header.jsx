@@ -7,7 +7,7 @@ import { Button } from "./ui/button";
 export default function Header() {
 
   return (
-    <header className="fixed top-0 w-full border-b bg-background/80 backdrop-blur-md z-10 supports-[backdrop-filter]:bg-background/60">
+    <header className="fixed top-0 w-full border-b bg-background/80 backdrop-blur-md z-10 supports-backdrop-filter:bg-background/60">
       <nav className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center space-x-3">
           <Image
@@ -17,7 +17,7 @@ export default function Header() {
             height={60}
             className="h-10 w-auto object-contain"
           />
-          <span className="hidden sm:inline-block text-lg font-semibold tracking-wide bg-gradient-to-r from-emerald-400 via-orange-400 to-emerald-400 bg-clip-text text-transparent shadow-sm">
+          <span className="hidden sm:inline-block text-lg font-semibold tracking-wide bg-linear-to-r from-emerald-400 via-orange-400 to-emerald-400 bg-clip-text text-transparent shadow-sm">
             Vapra Workshop
           </span>
         </Link>

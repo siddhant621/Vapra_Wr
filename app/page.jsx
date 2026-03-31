@@ -23,8 +23,8 @@ export default async function Home() {
   const primaryLabel = isAdmin ? "Dashboard" : "Book Service";
   const primaryHref = isAdmin ? "/admin" : "/onboarding";
 
-  const secondaryLabel = "Appointments";
-  const secondaryHref = isAdmin ? "/admin" : "/appointments";
+  const secondaryLabel = isAdmin ? "Manage" : "Appointments";
+  const secondaryHref = isAdmin ? "/admin/manage" : "/appointments";
 
   return (
     <div className="bg-background">

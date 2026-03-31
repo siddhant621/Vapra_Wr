@@ -116,9 +116,8 @@ export async function updateServiceRequestStatus(formData) {
 
   const requestId = formData.get("requestId");
   const status = formData.get("status");
-  const adminNotes = formData.get("adminNotes") || null;
 
-  if (!requestId || !["PENDING", "ASSIGNED", "COMPLETED", "CLOSED"].includes(status)) {
+  if (!requestId || !["PENDING", "REVIEWED", "ASSIGNED", "COMPLETED", "CLOSED"].includes(status)) {
     throw new Error("Invalid input");
   }
 
@@ -127,7 +126,6 @@ export async function updateServiceRequestStatus(formData) {
       where: { id: requestId },
       data: {
         status,
-        adminNotes,
         updatedAt: new Date(),
       },
     });
