@@ -14,6 +14,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { getCurrentUser } from "@/actions/onboarding";
 import TrackAppointmentButton from "@/components/track-appointment-button";
+import SliderBanner from "@/components/slider-banner";
 
 export default async function Home() {
   const user = await getCurrentUser();
@@ -73,15 +74,24 @@ export default async function Home() {
                 </Button>
               </div>
             </div>
-            <div className="relative h-[400px] lg:h-[500px] rounded-xl overflow-hidden">
-              <Image
-                src="/banner.jpg"
-                alt="service appointment"
-                fill
-                priority
-                className="object-cover md:pt-14 rounded-xl"
-              />
-            </div>
+            <SliderBanner
+              images={[
+                "vapra1.jpeg",
+                "vapra2.jpeg",
+                "vapra3.jpeg",
+                "vapra4.jpeg",
+                "vapra5.jpeg",
+                "vapra6.jpeg",
+                "vapra7.jpeg",
+                "vapra8.jpeg",
+                "vapra9.jpeg",
+                "vapra10.jpeg",
+                "vapra11.jpeg",
+                "vapra12.jpeg",
+              ]}
+              interval={4200}
+              alt="Vapra workshop"
+            />
           </div>
         </div>
       </section>
