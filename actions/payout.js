@@ -2,194 +2,205 @@
 
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
-import { revalidatePath } from "next/cache";
-
-const CREDIT_VALUE = 10; // $10 per credit total
-const PLATFORM_FEE_PER_CREDIT = 2; // $2 platform fee
-const DOCTOR_EARNINGS_PER_CREDIT = 8; // $8 to doctor
 
 /**
- * Request payout for all remaining credits
+ * Mechanic payout requests DISABLED - Admin control only
+ * Mechanics can view earnings and contact admin for payout
  */
 export async function requestPayout(formData) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    throw new Error("Unauthorized");
-  }
-
-  try {
-    const doctor = await db.user.findUnique({
-      where: {
-        clerkUserId: userId,
-        role: "DOCTOR",
-      },
-    });
-
-    if (!doctor) {
-      throw new Error("Doctor not found");
-    }
-
-    const paypalEmail = formData.get("paypalEmail");
-
-    if (!paypalEmail) {
-      throw new Error("PayPal email is required");
-    }
-
-    // Check if doctor has any pending payout requests
-    const existingPendingPayout = await db.payout.findFirst({
-      where: {
-        doctorId: doctor.id,
-        status: "PROCESSING",
-      },
-    });
-
-    if (existingPendingPayout) {
-      throw new Error(
-        "You already have a pending payout request. Please wait for it to be processed."
-      );
-    }
-
-    // Get doctor's current credit balance
-    const creditCount = doctor.credits;
-
-    if (creditCount === 0) {
-      throw new Error("No credits available for payout");
-    }
-
-    if (creditCount < 1) {
-      throw new Error("Minimum 1 credit required for payout");
-    }
-
-    const totalAmount = creditCount * CREDIT_VALUE;
-    const platformFee = creditCount * PLATFORM_FEE_PER_CREDIT;
-    const netAmount = creditCount * DOCTOR_EARNINGS_PER_CREDIT;
-
-    // Create payout request
-    const payout = await db.payout.create({
-      data: {
-        doctorId: doctor.id,
-        amount: totalAmount,
-        credits: creditCount,
-        platformFee,
-        netAmount,
-        paypalEmail,
-        status: "PROCESSING",
-      },
-    });
-
-    revalidatePath("/doctor");
-    return { success: true, payout };
-  } catch (error) {
-    console.error("Failed to request payout:", error);
-    throw new Error("Failed to request payout: " + error.message);
-  }
+  // DISABLED: Admin controls all payouts
+  throw new Error(
+    "Payouts managed by admin only. Contact administrator for payment."
+  );
 }
 
 /**
- * Get doctor's payout history
+ * Get mechanic's payout history (view only)
  */
-export async function getDoctorPayouts() {
+export async function getMechanicPayouts() {
   const { userId } = await auth();
 
   if (!userId) {
-    throw new Error("Unauthorized");
+    return { payouts: [] };
   }
 
   try {
-    const doctor = await db.user.findUnique({
+    const mechanic = await db.user.findUnique({
       where: {
         clerkUserId: userId,
-        role: "DOCTOR",
+        role: "MECHANIC",
       },
+      select: { id: true },
     });
 
-    if (!doctor) {
-      throw new Error("Doctor not found");
+    if (!mechanic) {
+      return { payouts: [] };
     }
 
     const payouts = await db.payout.findMany({
       where: {
-        doctorId: doctor.id,
+        mechanicId: mechanic.id,
       },
-      orderBy: {
-        createdAt: "desc",
+      select: {
+        id: true,
+        amount: true,
+        credits: true,
+        platformFee: true,
+        netAmount: true,
+        paypalEmail: true,
+        status: true,
+        createdAt: true,
+        processedAt: true,
       },
+      orderBy: { createdAt: "desc" },
     });
 
     return { payouts };
   } catch (error) {
-    throw new Error("Failed to fetch payouts: " + error.message);
+    console.error("Failed to fetch payouts:", error);
+    return { payouts: [], error: "Failed to fetch payouts" };
   }
 }
 
 /**
- * Get doctor's earnings summary
+ * Get mechanic's complete earnings dashboard
  */
-export async function getDoctorEarnings() {
+export async function getMechanicEarnings() {
   const { userId } = await auth();
 
   if (!userId) {
-    throw new Error("Unauthorized");
+    return { earnings: null };
   }
 
   try {
-    const doctor = await db.user.findUnique({
+    const mechanic = await db.user.findUnique({
       where: {
         clerkUserId: userId,
-        role: "DOCTOR",
+        role: "MECHANIC",
+      },
+      select: {
+        id: true,
+        credits: true,
+        name: true,
+        email: true,
       },
     });
 
-    if (!doctor) {
-      throw new Error("Doctor not found");
+    if (!mechanic) {
+      return { earnings: null };
     }
 
-    // Get all completed appointments for this doctor
-    const completedAppointments = await db.appointment.findMany({
+    // Total completed bookings
+    const totalStats = await db.booking.aggregate({
       where: {
-        doctorId: doctor.id,
+        mechanicId: mechanic.id,
         status: "COMPLETED",
       },
+      _count: { id: true },
+      _sum: { service: { basePrice: true } },
     });
 
-    // Calculate this month's completed appointments
-    const currentMonth = new Date();
-    currentMonth.setDate(1);
-    currentMonth.setHours(0, 0, 0, 0);
+    // This month stats
+    const thisMonth = new Date();
+    thisMonth.setDate(1);
+    thisMonth.setHours(0, 0, 0, 0);
 
-    const thisMonthAppointments = completedAppointments.filter(
-      (appointment) => new Date(appointment.createdAt) >= currentMonth
-    );
+    const monthStats = await db.booking.aggregate({
+      where: {
+        mechanicId: mechanic.id,
+        status: "COMPLETED",
+        scheduledAt: { gte: thisMonth },
+      },
+      _count: { id: true },
+      _sum: { service: { basePrice: true } },
+    });
 
-    // Use doctor's actual credits from the user model
-    const totalEarnings = doctor.credits * DOCTOR_EARNINGS_PER_CREDIT; // $8 per credit to doctor
+    // Platform fee: 20% of service price
+    const platformFeeRate = 0.2;
+    const mechanicShare = 0.8;
 
-    // Calculate this month's earnings (2 credits per appointment * $8 per credit)
-    const thisMonthEarnings =
-      thisMonthAppointments.length * 2 * DOCTOR_EARNINGS_PER_CREDIT;
-
-    // Simple average per month calculation
-    const averageEarningsPerMonth =
-      totalEarnings > 0
-        ? totalEarnings / Math.max(1, new Date().getMonth() + 1)
-        : 0;
-
-    // Get current credit balance for payout calculations
-    const availableCredits = doctor.credits;
-    const availablePayout = availableCredits * DOCTOR_EARNINGS_PER_CREDIT;
+    const totalServiceValue = totalStats._sum.service_basePrice || 0;
+    const monthServiceValue = monthStats._sum.service_basePrice || 0;
 
     return {
+      mechanic: {
+        id: mechanic.id,
+        name: mechanic.name,
+        email: mechanic.email,
+      },
       earnings: {
-        totalEarnings,
-        thisMonthEarnings,
-        completedAppointments: completedAppointments.length,
-        averageEarningsPerMonth,
-        availableCredits,
-        availablePayout,
+        availableCredits: mechanic.credits,
+        totalBookings: totalStats._count.id,
+        totalServiceValue: Math.round(totalServiceValue),
+        estimatedTotalEarnings: Math.round(totalServiceValue * mechanicShare),
+        platformFeesPaid: Math.round(totalServiceValue * platformFeeRate),
+        
+        // Monthly
+        monthBookings: monthStats._count.id,
+        monthServiceValue: Math.round(monthServiceValue),
+        monthEstimatedEarnings: Math.round(monthServiceValue * mechanicShare),
+        
+        // Payout ready amount
+        payoutReady: mechanic.credits * 10, // 1 credit = ₹10
+        payoutStatus: "Contact Admin",
+        adminControlled: true,
       },
     };
   } catch (error) {
-    throw new Error("Failed to fetch doctor earnings: " + error.message);
+    console.error("Failed to fetch earnings:", error);
+    return { earnings: null, error: "Failed to fetch earnings" };
+  }
+}
+
+/**
+ * Get recent completed jobs for mechanic dashboard
+ */
+export async function getMechanicRecentJobs(limit = 10) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return { jobs: [] };
+  }
+
+  try {
+    const mechanic = await db.user.findUnique({
+      where: { clerkUserId: userId, role: "MECHANIC" },
+      select: { id: true },
+    });
+
+    if (!mechanic) {
+      return { jobs: [] };
+    }
+
+    const jobs = await db.booking.findMany({
+      where: {
+        mechanicId: mechanic.id,
+        status: "COMPLETED",
+      },
+      include: {
+        customer: { select: { name: true, phone: true } },
+        vehicle: { 
+          select: { 
+            brand: true, 
+            model: true, 
+            registrationNo: true 
+          } 
+        },
+        service: { 
+          select: { 
+            name: true, 
+            basePrice: true, 
+            category: true 
+          } 
+        },
+      },
+      orderBy: { scheduledAt: "desc" },
+      take: parseInt(limit),
+    });
+
+    return { jobs };
+  } catch (error) {
+    console.error("Failed to fetch recent jobs:", error);
+    return { jobs: [], error: "Failed to fetch jobs" };
   }
 }

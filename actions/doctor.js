@@ -5,9 +5,9 @@ import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 
 /**
- * Set doctor's availability slots
+ * Set mechanic's working hours (9AM-7PM default)
  */
-export async function setAvailabilitySlots(formData) {
+export async function setWorkingHours(formData) {
   const { userId } = await auth();
 
   if (!userId) {
@@ -15,159 +15,129 @@ export async function setAvailabilitySlots(formData) {
   }
 
   try {
-    // Get the doctor
-    const doctor = await db.user.findUnique({
+    const mechanic = await db.user.findUnique({
       where: {
         clerkUserId: userId,
-        role: "DOCTOR",
+        role: "MECHANIC",
       },
     });
 
-    if (!doctor) {
-      throw new Error("Doctor not found");
+    if (!mechanic) {
+      throw new Error("Mechanic not found");
     }
 
-    // Get form data
-    const startTime = formData.get("startTime");
-    const endTime = formData.get("endTime");
+    const startTime = formData.get("startTime"); // "09:00"
+    const endTime = formData.get("endTime");     // "19:00"
+    const workDays = formData.get("workDays");   // "Mon,Tue,Wed,Thu,Fri,Sat"
 
-    // Validate input
     if (!startTime || !endTime) {
-      throw new Error("Start time and end time are required");
+      throw new Error("Working hours required");
     }
 
-    if (startTime >= endTime) {
-      throw new Error("Start time must be before end time");
-    }
-
-    // Check if the doctor already has slots
-    const existingSlots = await db.availability.findMany({
-      where: {
-        doctorId: doctor.id,
-      },
+    // Delete existing availability
+    await db.availability.deleteMany({
+      where: { mechanicId: mechanic.id },
     });
 
-    // If slots exist, delete them all (we're replacing them)
-    if (existingSlots.length > 0) {
-      // Don't delete slots that already have appointments
-      const slotsWithNoAppointments = existingSlots.filter(
-        (slot) => !slot.appointment
-      );
-
-      if (slotsWithNoAppointments.length > 0) {
-        await db.availability.deleteMany({
-          where: {
-            id: {
-              in: slotsWithNoAppointments.map((slot) => slot.id),
-            },
-          },
-        });
-      }
-    }
-
-    // Create new availability slot
-    const newSlot = await db.availability.create({
+    // Create new working hours record
+    const workingHours = await db.availability.create({
       data: {
-        doctorId: doctor.id,
-        startTime: new Date(startTime),
-        endTime: new Date(endTime),
+        mechanicId: mechanic.id,
+        startTime: new Date(`2024-01-01T${startTime}:00`),
+        endTime: new Date(`2024-01-01T${endTime}:00`),
+        workDays,
         status: "AVAILABLE",
       },
     });
 
-    revalidatePath("/doctor");
-    return { success: true, slot: newSlot };
+    revalidatePath("/mechanic");
+    return { success: true, workingHours };
   } catch (error) {
-    console.error("Failed to set availability slots:", error);
-    throw new Error("Failed to set availability: " + error.message);
+    console.error("Failed to set working hours:", error);
+    throw new Error(`Failed to set hours: ${error.message}`);
   }
 }
 
 /**
- * Get doctor's current availability slots
+ * Get mechanic's current working hours
  */
-export async function getDoctorAvailability() {
+export async function getMechanicWorkingHours() {
   const { userId } = await auth();
 
   if (!userId) {
-    throw new Error("Unauthorized");
+    return { workingHours: null };
   }
 
   try {
-    const doctor = await db.user.findUnique({
-      where: {
-        clerkUserId: userId,
-        role: "DOCTOR",
-      },
+    const mechanic = await db.user.findUnique({
+      where: { clerkUserId: userId, role: "MECHANIC" },
     });
 
-    if (!doctor) {
-      throw new Error("Doctor not found");
+    if (!mechanic) {
+      return { workingHours: null };
     }
 
-    const availabilitySlots = await db.availability.findMany({
-      where: {
-        doctorId: doctor.id,
-      },
-      orderBy: {
-        startTime: "asc",
-      },
+    const workingHours = await db.availability.findFirst({
+      where: { mechanicId: mechanic.id, status: "AVAILABLE" },
     });
 
-    return { slots: availabilitySlots };
+    return { workingHours };
   } catch (error) {
-    throw new Error("Failed to fetch availability slots " + error.message);
+    console.error("Failed to fetch working hours:", error);
+    return { workingHours: null };
   }
 }
 
 /**
- * Get doctor's upcoming appointments
+ * Get mechanic's upcoming bookings
  */
-
-export async function getDoctorAppointments() {
+export async function getMechanicBookings() {
   const { userId } = await auth();
 
   if (!userId) {
-    throw new Error("Unauthorized");
+    return { bookings: [] };
   }
 
   try {
-    const doctor = await db.user.findUnique({
-      where: {
-        clerkUserId: userId,
-        role: "DOCTOR",
-      },
+    const mechanic = await db.user.findUnique({
+      where: { clerkUserId: userId, role: "MECHANIC" },
     });
 
-    if (!doctor) {
-      throw new Error("Doctor not found");
+    if (!mechanic) {
+      return { bookings: [] };
     }
 
-    const appointments = await db.appointment.findMany({
+    const bookings = await db.booking.findMany({
       where: {
-        doctorId: doctor.id,
-        status: {
-          in: ["SCHEDULED"],
-        },
+        mechanicId: mechanic.id,
+        status: { in: ["SCHEDULED", "IN_PROGRESS"] },
+        scheduledAt: { gte: new Date() },
       },
       include: {
-        patient: true,
+        customer: { 
+          select: { name: true, phone: true, email: true } 
+        },
+        vehicle: { 
+          select: { brand: true, model: true, registrationNo: true } 
+        },
+        service: { 
+          select: { name: true, basePrice: true, category: true, duration: true } 
+        },
       },
-      orderBy: {
-        startTime: "asc",
-      },
+      orderBy: { scheduledAt: "asc" },
     });
 
-    return { appointments };
+    return { bookings };
   } catch (error) {
-    throw new Error("Failed to fetch appointments " + error.message);
+    console.error("Failed to fetch bookings:", error);
+    return { bookings: [] };
   }
 }
 
 /**
- * Cancel an appointment (can be done by both doctor and patient)
+ * Customer/Mechanic cancel booking (24hr policy)
  */
-export async function cancelAppointment(formData) {
+export async function cancelBooking(formData) {
   const { userId } = await auth();
 
   if (!userId) {
@@ -176,115 +146,82 @@ export async function cancelAppointment(formData) {
 
   try {
     const user = await db.user.findUnique({
-      where: {
-        clerkUserId: userId,
-      },
+      where: { clerkUserId: userId },
     });
 
     if (!user) {
       throw new Error("User not found");
     }
 
-    const appointmentId = formData.get("appointmentId");
+    const bookingId = formData.get("bookingId");
 
-    if (!appointmentId) {
-      throw new Error("Appointment ID is required");
+    if (!bookingId) {
+      throw new Error("Booking ID required");
     }
 
-    // Find the appointment with both patient and doctor details
-    const appointment = await db.appointment.findUnique({
-      where: {
-        id: appointmentId,
-      },
-      include: {
-        patient: true,
-        doctor: true,
+    const booking = await db.booking.findUnique({
+      where: { id: bookingId },
+      include: { 
+        customer: true, 
+        mechanic: true, 
+        service: true 
       },
     });
 
-    if (!appointment) {
-      throw new Error("Appointment not found");
+    if (!booking) {
+      throw new Error("Booking not found");
     }
 
-    // Verify the user is either the doctor or the patient for this appointment
-    if (appointment.doctorId !== user.id && appointment.patientId !== user.id) {
-      throw new Error("You are not authorized to cancel this appointment");
+    // Verify authorization (customer OR mechanic)
+    if (booking.customerId !== user.id && booking.mechanicId !== user.id) {
+      throw new Error("Not authorized to cancel this booking");
     }
 
-    // Perform cancellation in a transaction
+    // 24hr cancellation policy
+    const now = new Date();
+    const cancelDeadline = new Date(booking.scheduledAt);
+    cancelDeadline.setDate(cancelDeadline.getDate() - 1);
+
+    if (now > cancelDeadline) {
+      throw new Error("Cannot cancel within 24 hours of scheduled time");
+    }
+
+    // Refund credits to customer (full service price)
     await db.$transaction(async (tx) => {
-      // Update the appointment status to CANCELLED
-      await tx.appointment.update({
-        where: {
-          id: appointmentId,
-        },
-        data: {
-          status: "CANCELLED",
-        },
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: { status: "CANCELLED" },
       });
 
-      // Always refund credits to patient and deduct from doctor
-      // Create credit transaction for patient (refund)
+      // Refund customer
       await tx.creditTransaction.create({
         data: {
-          userId: appointment.patientId,
-          amount: 2,
-          type: "APPOINTMENT_DEDUCTION",
+          userId: booking.customerId,
+          amount: booking.service.basePrice,
+          type: "CANCELLATION_REFUND",
+          note: `Refund for cancelled booking: ${booking.service.name}`,
         },
       });
 
-      // Create credit transaction for doctor (deduction)
-      await tx.creditTransaction.create({
-        data: {
-          userId: appointment.doctorId,
-          amount: -2,
-          type: "APPOINTMENT_DEDUCTION",
-        },
-      });
-
-      // Update patient's credit balance (increment)
       await tx.user.update({
-        where: {
-          id: appointment.patientId,
-        },
-        data: {
-          credits: {
-            increment: 2,
-          },
-        },
-      });
-
-      // Update doctor's credit balance (decrement)
-      await tx.user.update({
-        where: {
-          id: appointment.doctorId,
-        },
-        data: {
-          credits: {
-            decrement: 2,
-          },
-        },
+        where: { id: booking.customerId },
+        data: { credits: { increment: booking.service.basePrice } },
       });
     });
 
-    // Determine which path to revalidate based on user role
-    if (user.role === "DOCTOR") {
-      revalidatePath("/doctor");
-    } else if (user.role === "PATIENT") {
-      revalidatePath("/appointments");
-    }
-
+    revalidatePath("/bookings");
+    revalidatePath("/mechanic");
     return { success: true };
   } catch (error) {
-    console.error("Failed to cancel appointment:", error);
-    throw new Error("Failed to cancel appointment: " + error.message);
+    console.error("Cancel booking failed:", error);
+    throw new Error(`Cancel failed: ${error.message}`);
   }
 }
 
 /**
- * Add notes to an appointment
+ * Mechanic adds service notes / updates status
  */
-export async function addAppointmentNotes(formData) {
+export async function updateBookingNotes(formData) {
   const { userId } = await auth();
 
   if (!userId) {
@@ -292,143 +229,123 @@ export async function addAppointmentNotes(formData) {
   }
 
   try {
-    const doctor = await db.user.findUnique({
-      where: {
-        clerkUserId: userId,
-        role: "DOCTOR",
-      },
+    const mechanic = await db.user.findUnique({
+      where: { clerkUserId: userId, role: "MECHANIC" },
     });
 
-    if (!doctor) {
-      throw new Error("Doctor not found");
+    if (!mechanic) {
+      throw new Error("Mechanic not found");
     }
 
-    const appointmentId = formData.get("appointmentId");
+    const bookingId = formData.get("bookingId");
     const notes = formData.get("notes");
+    const status = formData.get("status");
 
-    if (!appointmentId || !notes) {
-      throw new Error("Appointment ID and notes are required");
+    if (!bookingId || !notes) {
+      throw new Error("Booking ID and notes required");
     }
 
-    // Verify the appointment belongs to this doctor
-    const appointment = await db.appointment.findUnique({
-      where: {
-        id: appointmentId,
-        doctorId: doctor.id,
+    const booking = await db.booking.findFirst({
+      where: { 
+        id: bookingId, 
+        mechanicId: mechanic.id 
       },
+      include: { service: true },
     });
 
-    if (!appointment) {
-      throw new Error("Appointment not found");
+    if (!booking) {
+      throw new Error("Booking not found");
     }
 
-    // Update the appointment notes
-    const updatedAppointment = await db.appointment.update({
-      where: {
-        id: appointmentId,
-      },
-      data: {
-        notes,
-      },
-    });
-
-    revalidatePath("/doctor");
-    return { success: true, appointment: updatedAppointment };
-  } catch (error) {
-    console.error("Failed to add appointment notes:", error);
-    throw new Error("Failed to update notes: " + error.message);
-  }
-}
-
-/**
- * Mark an appointment as completed (only by doctor after end time)
- */
-export async function markAppointmentCompleted(formData) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    throw new Error("Unauthorized");
-  }
-
-  try {
-    const doctor = await db.user.findUnique({
-      where: {
-        clerkUserId: userId,
-        role: "DOCTOR",
-      },
-    });
-
-    if (!doctor) {
-      throw new Error("Doctor not found");
-    }
-
-    const appointmentId = formData.get("appointmentId");
-
-    if (!appointmentId) {
-      throw new Error("Appointment ID is required");
-    }
-
-    // Find the appointment
-    const appointment = await db.appointment.findUnique({
-      where: {
-        id: appointmentId,
-        doctorId: doctor.id, // Ensure appointment belongs to this doctor
+    const updatedBooking = await db.booking.update({
+      where: { id: bookingId },
+      data: { 
+        notes, 
+        status: status || booking.status 
       },
       include: {
-        patient: true,
+        customer: true,
+        vehicle: true,
+        service: true,
       },
     });
 
-    if (!appointment) {
-      throw new Error("Appointment not found or not authorized");
+    revalidatePath("/mechanic");
+    return { success: true, booking: updatedBooking };
+  } catch (error) {
+    console.error("Update notes failed:", error);
+    throw new Error(`Update failed: ${error.message}`);
+  }
+}
+
+/**
+ * Mark booking as completed (mechanic only, after scheduled time)
+ */
+export async function markBookingCompleted(formData) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  try {
+    const mechanic = await db.user.findUnique({
+      where: { clerkUserId: userId, role: "MECHANIC" },
+    });
+
+    if (!mechanic) {
+      throw new Error("Mechanic not found");
     }
 
-    // Check if appointment is currently scheduled
-    if (appointment.status !== "SCHEDULED") {
-      throw new Error("Only scheduled appointments can be marked as completed");
+    const bookingId = formData.get("bookingId");
+
+    if (!bookingId) {
+      throw new Error("Booking ID required");
     }
 
-    // Check if current time is after the appointment end time
+    const booking = await db.booking.findFirst({
+      where: { 
+        id: bookingId, 
+        mechanicId: mechanic.id,
+        status: "IN_PROGRESS",
+      },
+    });
+
+    if (!booking) {
+      throw new Error("Booking not scheduled or already completed");
+    }
+
+    // Must be after scheduled time + service duration
     const now = new Date();
-    const appointmentEndTime = new Date(appointment.endTime);
+    const expectedEnd = new Date(booking.scheduledAt);
+    expectedEnd.setMinutes(expectedEnd.getMinutes() + booking.service.duration);
 
-    if (now < appointmentEndTime) {
-      throw new Error(
-        "Cannot mark appointment as completed before the scheduled end time"
-      );
+    if (now < expectedEnd) {
+      throw new Error("Cannot complete before expected end time");
     }
 
-    // Mark appointment completed and create transaction for doctor earnings
     await db.$transaction(async (tx) => {
-      await tx.appointment.update({
-        where: { id: appointmentId },
+      // Mark completed
+      await tx.booking.update({
+        where: { id: bookingId },
         data: { status: "COMPLETED" },
       });
 
-      // Create credit transaction for doctor (2 credits per appointment)
-      await tx.creditTransaction.create({
+      // Create service record
+      await tx.serviceRecord.create({
         data: {
-          userId: doctor.id,
-          amount: 2,
-          type: "APPOINTMENT_COMPLETION",
-        },
-      });
-
-      // Update doctor's credit balance
-      await tx.user.update({
-        where: { id: doctor.id },
-        data: {
-          credits: {
-            increment: 2,
-          },
+          vehicleId: booking.vehicleId,
+          bookingId,
+          description: booking.notes || "Service completed",
+          cost: booking.service.basePrice,
         },
       });
     });
 
-    revalidatePath("/doctor");
+    revalidatePath("/mechanic");
     return { success: true };
   } catch (error) {
-    console.error("Failed to mark appointment completed:", error);
-    throw new Error("Failed to complete appointment: " + error.message);
+    console.error("Complete booking failed:", error);
+    throw new Error(`Completion failed: ${error.message}`);
   }
 }

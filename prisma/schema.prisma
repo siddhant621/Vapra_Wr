@@ -7,169 +7,214 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// =============================================================================
+// CORE MODELS
+// =============================================================================
+
 model User {
-  id          String  @id @default(uuid())
-  clerkUserId String  @unique
-  email       String  @unique
-  name        String?
-  imageUrl    String?
-
-  role UserRole @default(CUSTOMER)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  vehicles           Vehicle[]
-  payments           Payment[]
-  payouts            Payout[]
-  creditTransactions CreditTransaction[]
-
-  customerBookings Booking[] @relation("CustomerBookings")
-  mechanicBookings Booking[] @relation("MechanicBookings")
-
-  serviceNotes ServiceNote[]
+  id                  String              @id @default(uuid())
+  clerkUserId         String              @unique
+  email               String              @unique
+  name                String?
+  imageUrl            String?
+  phone               String?
+  role                UserRole            @default(CUSTOMER)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  
+  // Mechanic specific
+  experience          Int?                // Years
+  specialty           String?             // Engine, AC, Bodywork etc.
+  verificationStatus  VerificationStatus  @default(PENDING)
+  
+  // Credits & Wallet
+  credits             Int                 @default(0)
+  
+  // Relations
+  customerBookings    Booking[]           @relation("CustomerBookings")
+  mechanicBookings    Booking[]           @relation("MechanicBookings")
+  vehicles            Vehicle[]
+  payments            Payment[]
+  payouts             Payout[]
+  creditTransactions  CreditTransaction[]
+  bookingRequests     BookingRequest[]
+  
+  @@index([role])
+  @@index([verificationStatus])
 }
 
 model Vehicle {
-  id      String @id @default(uuid())
-  ownerId String
-
+  id             String   @id @default(uuid())
+  ownerId        String
   brand          String
   model          String
   year           Int
   registrationNo String   @unique
   fuelType       FuelType
-
-  createdAt DateTime @default(now())
-
-  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-
+  mileage        Int?     
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  owner          User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   bookings       Booking[]
   serviceRecords ServiceRecord[]
+  
+  @@index([ownerId])
+  @@index([registrationNo])
 }
 
 model Service {
-  id          String  @id @default(uuid())
+  id          String   @id @default(uuid())
   name        String
   description String?
-  basePrice   Float
-  duration    Int
-
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-
-  bookings Booking[]
+  basePrice   Float    
+  duration    Int      
+  category    ServiceCategory
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  
+  bookings    Booking[]
+  
+  @@index([category, isActive])
 }
+
+// =============================================================================
+// BOOKING & SERVICE WORKFLOW
+// =============================================================================
 
 model Booking {
-  id String @id @default(uuid())
-
-  customerId String
-  mechanicId String?
-
-  vehicleId String
-  serviceId String
-
-  scheduledAt DateTime
-  status      BookingStatus @default(SCHEDULED)
-
-  notes String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  customer User  @relation("CustomerBookings", fields: [customerId], references: [id])
-  mechanic User? @relation("MechanicBookings", fields: [mechanicId], references: [id])
-
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
-  service Service @relation(fields: [serviceId], references: [id])
-
-  payments      Payment[]
+  id           String        @id @default(uuid())
+  customerId   String
+  mechanicId   String?
+  vehicleId    String
+  serviceId    String
+  scheduledAt  DateTime
+  status       BookingStatus @default(SCHEDULED)
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  
+  customer     User          @relation("CustomerBookings", fields: [customerId], references: [id])
+  mechanic     User?         @relation("MechanicBookings", fields: [mechanicId], references: [id])
+  service      Service       @relation(fields: [serviceId], references: [id])
+  vehicle      Vehicle       @relation(fields: [vehicleId], references: [id])
+  payments     Payment[]
   serviceRecord ServiceRecord?
-
-  serviceNotes ServiceNote[]
-
+  
   @@index([status, scheduledAt])
-}
-
-model ServiceNote {
-  id         String @id @default(uuid())
-  bookingId  String
-  mechanicId String
-
-  note      String
-  createdAt DateTime @default(now())
-
-  booking  Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  mechanic User    @relation(fields: [mechanicId], references: [id])
+  @@index([customerId])
+  @@index([mechanicId])
 }
 
 model ServiceRecord {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   vehicleId String
-  bookingId String? @unique
-
+  bookingId String?  @unique
   description String?
-  cost        Float
-
+  cost      Float
+  partsUsed Json?    // {"oil": "5W30", "filter": "ABC123"}
   createdAt DateTime @default(now())
-
-  vehicle Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  booking Booking? @relation(fields: [bookingId], references: [id])
+  
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 }
 
+// =============================================================================
+// PAYMENTS & PAYOUTS
+// =============================================================================
+
 model Payment {
-  id String @id @default(uuid())
-
-  userId    String
-  bookingId String?
-
+  id            String         @id @default(uuid())
+  userId        String
+  bookingId     String?
   amount        Float
   paymentMethod PaymentMethod
-  status        PaymentStatus @default(PAID)
-
-  createdAt DateTime @default(now())
-
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  booking Booking? @relation(fields: [bookingId], references: [id])
+  status        PaymentStatus  @default(PAID)
+  transactionId String?        @unique
+  createdAt     DateTime       @default(now())
+  
+  booking       Booking?       @relation(fields: [bookingId], references: [id])
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([status])
+  @@index([transactionId])
 }
 
 model Payout {
-  id String @id @default(uuid())
-
-  mechanicId String
-  mechanic   User   @relation(fields: [mechanicId], references: [id], onDelete: Cascade)
-
-  amount      Float
-  platformFee Float
-  netAmount   Float
-
-  status PayoutStatus @default(PROCESSING)
-
-  createdAt   DateTime  @default(now())
-  processedAt DateTime?
-
-  processedBy String?
-
+  id           String      @id @default(uuid())
+  mechanicId   String
+  amount       Float
+  credits      Int
+  platformFee  Float
+  netAmount    Float
+  paypalEmail  String?
+  status       PayoutStatus @default(PROCESSING)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  processedAt  DateTime?
+  processedBy  String?
+  
+  mechanic     User        @relation(fields: [mechanicId], references: [id], onDelete: Cascade)
+  
   @@index([status, createdAt])
+  @@index([mechanicId, status])
 }
+
+// =============================================================================
+// CREDITS SYSTEM
+// =============================================================================
 
 model CreditTransaction {
-  id String @id @default(uuid())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  amount Int
-  type   TransactionType
-
-  createdAt DateTime @default(now())
+  id        String          @id @default(uuid())
+  userId    String
+  amount    Int
+  type      TransactionType
+  note      String?
+  createdAt DateTime        @default(now())
+  
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, createdAt])
 }
+
+// =============================================================================
+// CUSTOMER REQUESTS & SUPPORT
+// =============================================================================
+
+model BookingRequest {
+  id               String               @id @default(uuid())
+  customerId       String?
+  serviceName      String
+  vehicleInfo      String
+  issueDescription String
+  preferredDate    DateTime
+  phone            String
+  email            String?
+  status           BookingRequestStatus @default(PENDING)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  preferredTimeSlot String?
+  
+  customer         User?                @relation(fields: [customerId], references: [id])
+  
+  @@index([status, createdAt])
+  @@index([phone])
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
 
 enum UserRole {
   CUSTOMER
-  MECHANIC
+  MECHANIC 
   ADMIN
+}
+
+enum ServiceCategory {
+  GENERAL
+  PAID
+  MAJOR
 }
 
 enum FuelType {
@@ -188,13 +233,14 @@ enum BookingStatus {
 }
 
 enum PaymentMethod {
-  CARD
   UPI
+  CARD
   CASH
   WALLET
 }
 
 enum PaymentStatus {
+  PENDING
   PAID
   FAILED
   REFUNDED
@@ -203,8 +249,27 @@ enum PaymentStatus {
 enum PayoutStatus {
   PROCESSING
   PROCESSED
+  FAILED
 }
 
 enum TransactionType {
+  MONTHLY_ALLOCATION
+  SERVICE_BOOKING
+  SERVICE_EARNING
   ADMIN_ADJUSTMENT
+  MANUAL_REFUND
+}
+
+enum BookingRequestStatus {
+  PENDING
+  REVIEWED
+  ASSIGNED
+  COMPLETED
+  CLOSED
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
 }

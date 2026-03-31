@@ -5,192 +5,262 @@ import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { format } from "date-fns";
 
-// Define credit allocations per plan
+// Garage subscription plans (monthly service credits)
 const PLAN_CREDITS = {
-  free_user: 0, // Basic plan: 2 credits
-  standard: 10, // Standard plan: 10 credits per month
-  premium: 24, // Premium plan: 24 credits per month
+  free_user:  5,   // Basic: General services
+  standard:  25,   // Standard: General + Paid services  
+  premium:   60,   // Premium: All services
 };
 
-// Each appointment costs 2 credits
-const APPOINTMENT_CREDIT_COST = 2;
+// Dynamic service pricing from Service model
+// const SERVICE_CREDIT_COSTS = {}; // Use service.basePrice instead
 
 /**
- * Checks user's subscription and allocates monthly credits if needed
- * This should be called on app initialization (e.g., in a layout component)
+ * Allocates monthly service credits based on subscription
+ * Call from layout/middleware for CUSTOMER role
  */
 export async function checkAndAllocateCredits(user) {
   try {
-    if (!user) {
-      return null;
-    }
-
-    // Only allocate credits for patients
-    if (user.role !== "PATIENT") {
+    if (!user || user.role !== "CUSTOMER") {
       return user;
     }
 
-    // Check if user has a subscription
     const { has } = await auth();
 
-    // Check which plan the user has
-    const hasBasic = has({ plan: "free_user" });
-    const hasStandard = has({ plan: "standard" });
-    const hasPremium = has({ plan: "premium" });
-
+    // Detect subscription plan
     let currentPlan = null;
     let creditsToAllocate = 0;
 
-    if (hasPremium) {
+    if (has({ plan: "premium" })) {
       currentPlan = "premium";
       creditsToAllocate = PLAN_CREDITS.premium;
-    } else if (hasStandard) {
+    } else if (has({ plan: "standard" })) {
       currentPlan = "standard";
       creditsToAllocate = PLAN_CREDITS.standard;
-    } else if (hasBasic) {
+    } else if (has({ plan: "free_user" })) {
       currentPlan = "free_user";
       creditsToAllocate = PLAN_CREDITS.free_user;
     }
 
-    // If user doesn't have any plan, just return the user
-    if (!currentPlan) {
+    if (!currentPlan || creditsToAllocate === 0) {
       return user;
     }
 
-    // Check if we already allocated credits for this month
+    // Prevent double allocation this month
     const currentMonth = format(new Date(), "yyyy-MM");
+    const latestTx = user.creditTransactions?.[0];
 
-    // If there's a transaction this month, check if it's for the same plan
-    if (user.transactions.length > 0) {
-      const latestTransaction = user.transactions[0];
-      const transactionMonth = format(
-        new Date(latestTransaction.createdAt),
-        "yyyy-MM"
-      );
-      const transactionPlan = latestTransaction.packageId;
-
-      // If we already allocated credits for this month and the plan is the same, just return
-      if (
-        transactionMonth === currentMonth &&
-        transactionPlan === currentPlan
-      ) {
-        return user;
-      }
+    if (
+      latestTx?.type === "MONTHLY_ALLOCATION" &&
+      format(new Date(latestTx.createdAt), "yyyy-MM") === currentMonth
+    ) {
+      return user;
     }
 
-    // Allocate credits and create transaction record
+    // Allocate credits transactionally
     const updatedUser = await db.$transaction(async (tx) => {
-      // Create transaction record
       await tx.creditTransaction.create({
         data: {
           userId: user.id,
           amount: creditsToAllocate,
-          type: "CREDIT_PURCHASE",
-          packageId: currentPlan,
+          type: "MONTHLY_ALLOCATION",
+          note: `${currentPlan} plan - ${creditsToAllocate} service credits`,
         },
       });
 
-      // Update user's credit balance
-      const updatedUser = await tx.user.update({
-        where: {
-          id: user.id,
-        },
-        data: {
-          credits: {
-            increment: creditsToAllocate,
-          },
+      return tx.user.update({
+        where: { id: user.id },
+        data: { 
+          credits: { increment: creditsToAllocate }
         },
       });
-
-      return updatedUser;
     });
 
-    // Revalidate relevant paths to reflect updated credit balance
-    revalidatePath("/doctors");
-    revalidatePath("/appointments");
+    // Update UI
+    revalidatePath("/dashboard");
+    revalidatePath("/services");
+    revalidatePath("/vehicles");
 
     return updatedUser;
   } catch (error) {
-    console.error(
-      "Failed to check subscription and allocate credits:",
-      error.message
-    );
-    return null;
+    console.error("Credit allocation failed:", error);
+    return user;
   }
 }
 
 /**
- * Deducts credits for booking an appointment
+ * Deducts service credits for booking (dynamic pricing)
+ * Transfers to mechanic earnings
  */
-export async function deductCreditsForAppointment(userId, doctorId) {
+export async function deductCreditsForBooking(customerId, mechanicId, servicePrice) {
   try {
-    const user = await db.user.findUnique({
-      where: { id: userId },
+    const customer = await db.user.findUnique({
+      where: { id: customerId },
+      select: { id: true, credits: true, name: true },
     });
 
-    const doctor = await db.user.findUnique({
-      where: { id: doctorId },
+    const mechanic = await db.user.findUnique({
+      where: { id: mechanicId },
+      select: { id: true, name: true },
     });
 
-    // Ensure user has sufficient credits
-    if (user.credits < APPOINTMENT_CREDIT_COST) {
-      throw new Error("Insufficient credits to book an appointment");
+    if (!customer || customer.credits < servicePrice) {
+      return { 
+        success: false, 
+        error: `Need ${servicePrice} credits (you have ${customer?.credits || 0})` 
+      };
     }
 
-    if (!doctor) {
-      throw new Error("Doctor not found");
+    if (!mechanic) {
+      return { success: false, error: "Mechanic not found" };
     }
 
-    // Deduct credits from patient and add to doctor
+    // Atomic credit transfer
     const result = await db.$transaction(async (tx) => {
-      // Create transaction record for patient (deduction)
+      // Customer deduction
       await tx.creditTransaction.create({
         data: {
-          userId: user.id,
-          amount: -APPOINTMENT_CREDIT_COST,
-          type: "APPOINTMENT_DEDUCTION",
+          userId: customer.id,
+          amount: -servicePrice,
+          type: "SERVICE_BOOKING",
+          note: `Service payment: ${servicePrice} credits`,
         },
       });
 
-      // Create transaction record for doctor (addition)
+      // Mechanic earning (platform keeps 20% fee)
+      const platformFee = Math.floor(servicePrice * 0.2);
+      const mechanicEarning = servicePrice - platformFee;
+
       await tx.creditTransaction.create({
         data: {
-          userId: doctor.id,
-          amount: APPOINTMENT_CREDIT_COST,
-          type: "APPOINTMENT_DEDUCTION", // Using same type for consistency
+          userId: mechanic.id,
+          amount: mechanicEarning,
+          type: "SERVICE_EARNING",
+          note: `Service earning: ${mechanicEarning} credits (fee: ${platformFee})`,
         },
       });
 
-      // Update patient's credit balance (decrement)
-      const updatedUser = await tx.user.update({
-        where: {
-          id: user.id,
-        },
-        data: {
-          credits: {
-            decrement: APPOINTMENT_CREDIT_COST,
-          },
-        },
+      // Update balances
+      const updatedCustomer = await tx.user.update({
+        where: { id: customer.id },
+        data: { credits: { decrement: servicePrice } },
       });
 
-      // Update doctor's credit balance (increment)
       await tx.user.update({
-        where: {
-          id: doctor.id,
-        },
-        data: {
-          credits: {
-            increment: APPOINTMENT_CREDIT_COST,
-          },
-        },
+        where: { id: mechanic.id },
+        data: { credits: { increment: mechanicEarning } },
       });
 
-      return updatedUser;
+      return { 
+        customer: updatedCustomer, 
+        mechanicEarning,
+        platformFee 
+      };
     });
 
-    return { success: true, user: result };
+    return { 
+      success: true, 
+      customerCredits: result.customer.credits,
+      mechanicEarning: result.mechanicEarning,
+      platformFee: result.platformFee,
+    };
   } catch (error) {
-    console.error("Failed to deduct credits:", error);
+    console.error("Booking credit deduction failed:", error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Admin bulk credit operations
+ */
+export async function adminCreditAdjustment(formData) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  try {
+    const admin = await db.user.findUnique({
+      where: { clerkUserId: userId },
+    });
+    if (admin?.role !== "ADMIN") throw new Error("Admin required");
+
+    const targetUserId = formData.get("userId");
+    const amount = parseInt(formData.get("amount") || "0");
+    const reason = formData.get("reason") || "Admin adjustment";
+
+    if (!targetUserId || isNaN(amount)) {
+      throw new Error("User ID and amount required");
+    }
+
+    const targetUser = await db.user.findUnique({
+      where: { id: targetUserId },
+    });
+    if (!targetUser) throw new Error("Target user not found");
+
+    await db.$transaction(async (tx) => {
+      await tx.creditTransaction.create({
+        data: {
+          userId: targetUserId,
+          amount,
+          type: amount > 0 ? "ADMIN_CREDIT_ADD" : "ADMIN_CREDIT_DEDUCT",
+          note: reason,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: targetUserId },
+        data: { credits: { increment: amount } },
+      });
+    });
+
+    revalidatePath("/admin/users");
+    return { 
+      success: true, 
+      newBalance: targetUser.credits + amount 
+    };
+  } catch (error) {
+    console.error("Admin credit adjustment failed:", error);
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Get detailed credit history with filters
+ */
+export async function getCreditHistory(userId, filters = {}) {
+  try {
+    const { type, dateFrom, dateTo } = filters;
+
+    const where = { 
+      userId,
+      ...(type && { type }),
+      ...(dateFrom && { createdAt: { gte: new Date(dateFrom) } }),
+      ...(dateTo && { createdAt: { lte: new Date(dateTo) } }),
+    };
+
+    const transactions = await db.creditTransaction.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: { 
+        user: { 
+          select: { name: true, role: true } 
+        } 
+      },
+      take: 50,
+    });
+
+    const balance = await db.user.findUnique({
+      where: { id: userId },
+      select: { credits: true },
+    });
+
+    return { 
+      transactions, 
+      currentBalance: balance?.credits || 0,
+      totalEarned: transactions.filter(t => t.amount > 0).reduce((sum, t) => sum + t.amount, 0),
+      totalSpent: transactions.filter(t => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0),
+    };
+  } catch (error) {
+    console.error("Credit history fetch failed:", error);
+    return { transactions: [], currentBalance: 0 };
   }
 }

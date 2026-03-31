@@ -5,7 +5,7 @@ import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 
 /**
- * Verifies if current user has admin role
+ * Verify admin access
  */
 export async function verifyAdmin() {
   const { userId } = await auth();
@@ -16,135 +16,46 @@ export async function verifyAdmin() {
 
   try {
     const user = await db.user.findUnique({
-      where: {
-        clerkUserId: userId,
-      },
+      where: { clerkUserId: userId },
     });
 
     return user?.role === "ADMIN";
   } catch (error) {
-    console.error("Failed to verify admin:", error);
+    console.error("Admin verification failed:", error);
     return false;
   }
 }
 
 /**
- * Gets all doctors with pending verification
+ * Get all mechanics (no verification needed)
  */
-export async function getPendingDoctors() {
+export async function getAllMechanicsAdmin() {
   const isAdmin = await verifyAdmin();
   if (!isAdmin) throw new Error("Unauthorized");
 
   try {
-    const pendingDoctors = await db.user.findMany({
-      where: {
-        role: "DOCTOR",
-        verificationStatus: "PENDING",
+    const mechanics = await db.user.findMany({
+      where: { role: "MECHANIC" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        experience: true,
+        credits: true,
+        createdAt: true,
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: { createdAt: "desc" },
     });
 
-    return { doctors: pendingDoctors };
+    return { mechanics };
   } catch (error) {
-    throw new Error("Failed to fetch pending doctors");
+    throw new Error("Failed to fetch mechanics");
   }
 }
 
 /**
- * Gets all verified doctors
- */
-export async function getVerifiedDoctors() {
-  const isAdmin = await verifyAdmin();
-  if (!isAdmin) throw new Error("Unauthorized");
-
-  try {
-    const verifiedDoctors = await db.user.findMany({
-      where: {
-        role: "DOCTOR",
-        verificationStatus: "VERIFIED",
-      },
-      orderBy: {
-        name: "asc",
-      },
-    });
-
-    return { doctors: verifiedDoctors };
-  } catch (error) {
-    console.error("Failed to get verified doctors:", error);
-    return { error: "Failed to fetch verified doctors" };
-  }
-}
-
-/**
- * Updates a doctor's verification status
- */
-export async function updateDoctorStatus(formData) {
-  const isAdmin = await verifyAdmin();
-  if (!isAdmin) throw new Error("Unauthorized");
-
-  const doctorId = formData.get("doctorId");
-  const status = formData.get("status");
-
-  if (!doctorId || !["VERIFIED", "REJECTED"].includes(status)) {
-    throw new Error("Invalid input");
-  }
-
-  try {
-    await db.user.update({
-      where: {
-        id: doctorId,
-      },
-      data: {
-        verificationStatus: status,
-      },
-    });
-
-    revalidatePath("/admin");
-    return { success: true };
-  } catch (error) {
-    console.error("Failed to update doctor status:", error);
-    throw new Error(`Failed to update doctor status: ${error.message}`);
-  }
-}
-
-/**
- * Suspends or reinstates a doctor
- */
-export async function updateDoctorActiveStatus(formData) {
-  const isAdmin = await verifyAdmin();
-  if (!isAdmin) throw new Error("Unauthorized");
-
-  const doctorId = formData.get("doctorId");
-  const suspend = formData.get("suspend") === "true";
-
-  if (!doctorId) {
-    throw new Error("Doctor ID is required");
-  }
-
-  try {
-    const status = suspend ? "PENDING" : "VERIFIED";
-
-    await db.user.update({
-      where: {
-        id: doctorId,
-      },
-      data: {
-        verificationStatus: status,
-      },
-    });
-
-    revalidatePath("/admin");
-    return { success: true };
-  } catch (error) {
-    console.error("Failed to update doctor active status:", error);
-    throw new Error(`Failed to update doctor status: ${error.message}`);
-  }
-}
-
-/**
- * Gets all pending payouts that need admin approval
+ * Get pending payouts for admin approval
  */
 export async function getPendingPayouts() {
   const isAdmin = await verifyAdmin();
@@ -152,23 +63,19 @@ export async function getPendingPayouts() {
 
   try {
     const pendingPayouts = await db.payout.findMany({
-      where: {
-        status: "PROCESSING",
-      },
+      where: { status: "PROCESSING" },
       include: {
-        doctor: {
+        mechanic: {
           select: {
             id: true,
             name: true,
             email: true,
-            specialty: true,
+            phone: true,
             credits: true,
           },
         },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: { createdAt: "desc" },
     });
 
     return { payouts: pendingPayouts };
@@ -179,85 +86,213 @@ export async function getPendingPayouts() {
 }
 
 /**
- * Approves a payout request and deducts credits from doctor's account
+ * Approve payout and deduct credits
  */
 export async function approvePayout(formData) {
   const isAdmin = await verifyAdmin();
   if (!isAdmin) throw new Error("Unauthorized");
 
   const payoutId = formData.get("payoutId");
+  const paypalEmail = formData.get("paypalEmail");
 
   if (!payoutId) {
-    throw new Error("Payout ID is required");
+    throw new Error("Payout ID required");
   }
 
   try {
-    // Get admin user info
     const { userId } = await auth();
-    const admin = await db.user.findUnique({
-      where: { clerkUserId: userId },
-    });
+    const admin = await db.user.findUnique({ where: { clerkUserId: userId } });
 
-    // Find the payout request
     const payout = await db.payout.findUnique({
-      where: {
-        id: payoutId,
-        status: "PROCESSING",
+      where: { 
+        id: payoutId, 
+        status: "PROCESSING" 
       },
-      include: {
-        doctor: true,
-      },
+      include: { mechanic: true },
     });
 
     if (!payout) {
-      throw new Error("Payout request not found or already processed");
+      throw new Error("Payout not found or already processed");
     }
 
-    // Check if doctor has enough credits
-    if (payout.doctor.credits < payout.credits) {
-      throw new Error("Doctor doesn't have enough credits for this payout");
+    if (payout.mechanic.credits < payout.credits) {
+      throw new Error(`Mechanic needs ${payout.credits} credits (has ${payout.mechanic.credits})`);
     }
 
-    // Process the payout in a transaction
     await db.$transaction(async (tx) => {
-      // Update payout status to PROCESSED
+      // Mark payout processed
       await tx.payout.update({
-        where: {
-          id: payoutId,
-        },
+        where: { id: payoutId },
         data: {
           status: "PROCESSED",
           processedAt: new Date(),
-          processedBy: admin?.id || "unknown",
+          processedBy: admin?.id || "admin",
+          paypalEmail: paypalEmail || payout.paypalEmail,
         },
       });
 
-      // Deduct credits from doctor's account
+      // Deduct credits from mechanic
       await tx.user.update({
-        where: {
-          id: payout.doctorId,
-        },
-        data: {
-          credits: {
-            decrement: payout.credits,
-          },
-        },
+        where: { id: payout.mechanicId },
+        data: { credits: { decrement: payout.credits } },
       });
 
-      // Create a transaction record for the deduction
+      // Record transaction
       await tx.creditTransaction.create({
         data: {
-          userId: payout.doctorId,
+          userId: payout.mechanicId,
           amount: -payout.credits,
-          type: "ADMIN_ADJUSTMENT",
+          type: "PAYOUT_PROCESSED",
+          note: `Payout approved: ₹${payout.netAmount}`,
         },
       });
     });
 
-    revalidatePath("/admin");
-    return { success: true };
+    revalidatePath("/admin/payouts");
+    return { success: true, payoutId };
   } catch (error) {
-    console.error("Failed to approve payout:", error);
-    throw new Error(`Failed to approve payout: ${error.message}`);
+    console.error("Payout approval failed:", error);
+    throw new Error(`Approval failed: ${error.message}`);
+  }
+}
+
+/**
+ * Create payout request for mechanic (admin only)
+ */
+export async function createPayoutRequest(formData) {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const mechanicId = formData.get("mechanicId");
+  const credits = parseInt(formData.get("credits") || "0");
+  const paypalEmail = formData.get("paypalEmail");
+
+  if (!mechanicId || credits <= 0) {
+    throw new Error("Valid mechanic and credits required");
+  }
+
+  try {
+    const mechanic = await db.user.findUnique({ 
+      where: { id: mechanicId, role: "MECHANIC" } 
+    });
+
+    if (!mechanic || mechanic.credits < credits) {
+      throw new Error("Insufficient credits");
+    }
+
+    const amount = credits * 10;        // 1 credit = ₹10
+    const platformFee = Math.floor(credits * 2);  // ₹2 per credit
+    const netAmount = amount - platformFee;
+
+    const payout = await db.payout.create({
+      data: {
+        mechanicId,
+        amount,
+        credits,
+        platformFee,
+        netAmount,
+        paypalEmail: paypalEmail || "",
+        status: "PROCESSING",
+      },
+      include: {
+        mechanic: {
+          select: { name: true, email: true },
+        },
+      },
+    });
+
+    revalidatePath("/admin/payouts");
+    return { success: true, payout };
+  } catch (error) {
+    console.error("Payout creation failed:", error);
+    throw new Error(`Payout creation failed: ${error.message}`);
+  }
+}
+
+/**
+ * Get all payout history
+ */
+export async function getAllPayouts(filters = {}) {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  try {
+    const { status, mechanicId } = filters;
+    const where = { 
+      ...(status && { status }),
+      ...(mechanicId && { mechanicId }),
+    };
+
+    const payouts = await db.payout.findMany({
+      where,
+      include: {
+        mechanic: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return { payouts };
+  } catch (error) {
+    console.error("Failed to fetch payouts:", error);
+    return { payouts: [] };
+  }
+}
+
+/**
+ * Bulk payout actions
+ */
+export async function bulkApprovePayouts(payoutIds) {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  try {
+    const { userId } = await auth();
+    const admin = await db.user.findUnique({ where: { clerkUserId: userId } });
+
+    await db.$transaction(async (tx) => {
+      for (const payoutId of payoutIds) {
+        const payout = await tx.payout.findUnique({
+          where: { id: payoutId, status: "PROCESSING" },
+          include: { mechanic: true },
+        });
+
+        if (payout && payout.mechanic.credits >= payout.credits) {
+          await tx.payout.update({
+            where: { id: payoutId },
+            data: {
+              status: "PROCESSED",
+              processedAt: new Date(),
+              processedBy: admin?.id || "admin",
+            },
+          });
+
+          await tx.user.update({
+            where: { id: payout.mechanicId },
+            data: { credits: { decrement: payout.credits } },
+          });
+
+          await tx.creditTransaction.create({
+            data: {
+              userId: payout.mechanicId,
+              amount: -payout.credits,
+              type: "PAYOUT_PROCESSED",
+            },
+          });
+        }
+      }
+    });
+
+    revalidatePath("/admin/payouts");
+    return { success: true, processed: payoutIds.length };
+  } catch (error) {
+    console.error("Bulk payout failed:", error);
+    throw new Error("Bulk approval failed");
   }
 }

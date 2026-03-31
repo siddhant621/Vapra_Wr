@@ -1,33 +1,10 @@
-import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { currentUser } from "@clerk/nextjs/server";
 import Image from "next/image";
 import Link from "next/link";
 import React from "react";
+import { HeaderAuth } from "./header-auth";
 import { Button } from "./ui/button";
-import { isAllowedAdminEmail } from "@/lib/admin-access";
-import { db } from "@/lib/prisma";
 
-export default async function Header() {
-  const clerkUser = await currentUser();
-  const email = clerkUser?.emailAddresses?.[0]?.emailAddress;
-  const allowListed = isAllowedAdminEmail(email);
-
-  let isAdmin = allowListed;
-
-  // Only check database if not already admin via email allow-list
-  if (!isAdmin && clerkUser?.id) {
-    try {
-      const user = await db.user.findUnique({
-        where: { clerkUserId: clerkUser.id },
-        select: { role: true },
-      });
-      isAdmin = user?.role === "ADMIN";
-    } catch (error) {
-      // Database unavailable - use fallback behavior
-      console.warn("Database unavailable, using fallback behavior");
-      isAdmin = false;
-    }
-  }
+export default function Header() {
 
   return (
     <header className="fixed top-0 w-full border-b bg-background/80 backdrop-blur-md z-10 supports-[backdrop-filter]:bg-background/60">
@@ -45,38 +22,7 @@ export default async function Header() {
           </span>
         </Link>
 
-        <div className="flex items-center space-x-2">
-          <SignedOut>
-            <SignInButton>
-              <Button variant="secondary">Sign In</Button>
-            </SignInButton>
-          </SignedOut>
-
-          <SignedIn>
-            {isAdmin && (
-              <Link href="/admin" className="hidden sm:inline-flex">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-emerald-400 text-emerald-100 hover:bg-emerald-500/10 hover:border-emerald-300"
-                  aria-label="Go to admin dashboard"
-                >
-                  Admin
-                </Button>
-              </Link>
-            )}
-
-            <UserButton
-              appearance={{
-                elements: {
-                  avatarBox: "w-10 h-10",
-                  userButtonPopoverCard: "shadow-xl",
-                  userPreviewMainIdentifier: "font-semibold",
-                },
-              }}
-            />
-          </SignedIn>
-        </div>
+        <HeaderAuth />
       </nav>
 
       <div className="border-t border-border bg-muted/20">

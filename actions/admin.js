@@ -35,117 +35,208 @@ export async function verifyAdmin() {
 }
 
 /**
- * Gets all doctors with pending verification
+ * Admin creates a new mechanic directly (no verification needed)
  */
-export async function getPendingDoctors() {
+export async function createMechanic(formData) {
   const isAdmin = await verifyAdmin();
   if (!isAdmin) throw new Error("Unauthorized");
 
+  const name = formData.get("name");
+  const email = formData.get("email");
+  const specialty = formData.get("specialty");
+  const experience = formData.get("experience");
+
+  if (!name || !email || !specialty) {
+    throw new Error("Name, email, and specialty are required");
+  }
+
   try {
-    const pendingDoctors = await db.user.findMany({
+    // Create or update mechanic (upsert by email)
+    const user = await db.user.upsert({
+      where: { email },
+      update: {
+        name,
+        role: "MECHANIC",
+        specialty,
+        experience: experience ? parseInt(experience) : 0,
+        credits: 0,
+      },
+      create: {
+        email,
+        name,
+        role: "MECHANIC",
+        specialty,
+        experience: experience ? parseInt(experience) : 0,
+        credits: 0,
+      },
+    });
+
+    revalidatePath("/admin");
+    return { success: true, mechanic: user };
+  } catch (error) {
+    console.error("Failed to create mechanic:", error);
+    throw new Error(`Failed to create mechanic: ${error.message}`);
+  }
+}
+
+/**
+ * Gets all mechanics (no verification status needed)
+ */
+export async function getAllMechanics() {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) {
+    return { mechanics: [] };
+  }
+
+  try {
+    const mechanics = await db.user.findMany({
       where: {
-        role: "DOCTOR",
-        verificationStatus: "PENDING",
+        role: "MECHANIC",
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        specialty: true,
+        experience: true,
+        credits: true,
+        createdAt: true,
       },
       orderBy: {
         createdAt: "desc",
       },
     });
 
-    return { doctors: pendingDoctors };
+    return { mechanics };
   } catch (error) {
-    throw new Error("Failed to fetch pending doctors");
+    console.error("Failed to fetch mechanics:", error);
+    return { mechanics: [], error: "Database unavailable" };
   }
 }
 
 /**
- * Gets all verified doctors
+ * Gets mechanics with their work status (bookings assigned to them)
  */
-export async function getVerifiedDoctors() {
+export async function getMechanicsWithWorkStatus() {
   const isAdmin = await verifyAdmin();
-  if (!isAdmin) throw new Error("Unauthorized");
+  if (!isAdmin) {
+    return { mechanics: [] };
+  }
 
   try {
-    const verifiedDoctors = await db.user.findMany({
+    const mechanics = await db.user.findMany({
       where: {
-        role: "DOCTOR",
-        verificationStatus: "VERIFIED",
+        role: "MECHANIC",
+      },
+      include: {
+        mechanicBookings: {
+          where: {
+            status: {
+              in: ["SCHEDULED", "IN_PROGRESS"],
+            },
+          },
+          include: {
+            vehicle: {
+              select: { brand: true, model: true, registrationNo: true },
+            },
+            service: {
+              select: { name: true, basePrice: true },
+            },
+            customer: {
+              select: { name: true, email: true }, // Removed phone
+            },
+          },
+          orderBy: {
+            scheduledAt: "asc",
+          },
+        },
       },
       orderBy: {
-        name: "asc",
+        createdAt: "desc",
       },
     });
 
-    return { doctors: verifiedDoctors };
+    // Calculate stats for each mechanic
+    const mechanicsWithStats = mechanics.map((mechanic) => ({
+      ...mechanic,
+      activeJobs: mechanic.mechanicBookings.length,
+      scheduledCount: mechanic.mechanicBookings.filter((b) => b.status === "SCHEDULED").length,
+      inProgressCount: mechanic.mechanicBookings.filter((b) => b.status === "IN_PROGRESS").length,
+    }));
+
+    return { mechanics: mechanicsWithStats };
   } catch (error) {
-    console.error("Failed to get verified doctors:", error);
-    return { error: "Failed to fetch verified doctors" };
+    console.error("Failed to fetch mechanics with work status:", error);
+    return { mechanics: [], error: "Database unavailable" };
   }
 }
 
 /**
- * Updates a doctor's verification status
+ * Updates mechanic details
  */
-export async function updateDoctorStatus(formData) {
+export async function updateMechanicDetails(formData) {
   const isAdmin = await verifyAdmin();
   if (!isAdmin) throw new Error("Unauthorized");
 
-  const doctorId = formData.get("doctorId");
-  const status = formData.get("status");
+  const mechanicId = formData.get("mechanicId");
+  const name = formData.get("name");
+  const specialty = formData.get("specialty");
+  const experience = formData.get("experience");
 
-  if (!doctorId || !["VERIFIED", "REJECTED"].includes(status)) {
-    throw new Error("Invalid input");
+  if (!mechanicId) {
+    throw new Error("Mechanic ID is required");
   }
 
   try {
     await db.user.update({
       where: {
-        id: doctorId,
+        id: mechanicId,
       },
       data: {
-        verificationStatus: status,
+        ...(name && { name }),
+        ...(specialty && { specialty }),
+        ...(experience && { experience: parseInt(experience) }),
       },
     });
 
     revalidatePath("/admin");
     return { success: true };
   } catch (error) {
-    console.error("Failed to update doctor status:", error);
-    throw new Error(`Failed to update doctor status: ${error.message}`);
+    console.error("Failed to update mechanic:", error);
+    throw new Error(`Failed to update mechanic: ${error.message}`);
   }
 }
 
 /**
- * Suspends or reinstates a doctor
+ * Removes a mechanic (sets role back to CUSTOMER)
  */
-export async function updateDoctorActiveStatus(formData) {
+export async function removeMechanic(formData) {
   const isAdmin = await verifyAdmin();
   if (!isAdmin) throw new Error("Unauthorized");
 
-  const doctorId = formData.get("doctorId");
-  const suspend = formData.get("suspend") === "true";
+  const mechanicId = formData.get("mechanicId");
 
-  if (!doctorId) {
-    throw new Error("Doctor ID is required");
+  if (!mechanicId) {
+    throw new Error("Mechanic ID is required");
   }
 
   try {
-    const status = suspend ? "PENDING" : "VERIFIED";
-
     await db.user.update({
       where: {
-        id: doctorId,
+        id: mechanicId,
       },
       data: {
-        verificationStatus: status,
+        role: "CUSTOMER",
+        specialty: null,
+        experience: 0,
       },
     });
 
     revalidatePath("/admin");
     return { success: true };
   } catch (error) {
-    console.error("Failed to update doctor active status:", error);
-    throw new Error(`Failed to update doctor status: ${error.message}`);
+    console.error("Failed to remove mechanic:", error);
+    throw new Error(`Failed to remove mechanic: ${error.message}`);
   }
 }
 
@@ -154,7 +245,9 @@ export async function updateDoctorActiveStatus(formData) {
  */
 export async function getPendingPayouts() {
   const isAdmin = await verifyAdmin();
-  if (!isAdmin) throw new Error("Unauthorized");
+  if (!isAdmin) {
+    return { payouts: [] };
+  }
 
   try {
     const pendingPayouts = await db.payout.findMany({
@@ -162,12 +255,11 @@ export async function getPendingPayouts() {
         status: "PROCESSING",
       },
       include: {
-        doctor: {
+        mechanic: {
           select: {
             id: true,
             name: true,
             email: true,
-            specialty: true,
             credits: true,
           },
         },
@@ -180,54 +272,121 @@ export async function getPendingPayouts() {
     return { payouts: pendingPayouts };
   } catch (error) {
     console.error("Failed to fetch pending payouts:", error);
-    throw new Error("Failed to fetch pending payouts");
+    return { payouts: [], error: "Database unavailable" };
+  }
+}
+
+/**
+ * Admin creates a payout for a mechanic (admin controls all payouts)
+ */
+export async function createMechanicPayout(formData) {
+  const isAdmin = await verifyAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const mechanicId = formData.get("mechanicId");
+  const credits = parseInt(formData.get("credits") || "0");
+  const note = formData.get("note");
+
+  if (!mechanicId || !credits || credits <= 0) {
+    throw new Error("Valid mechanic and credit amount are required");
+  }
+
+  try {
+    const mechanic = await db.user.findUnique({
+      where: { id: mechanicId },
+    });
+
+    if (!mechanic || mechanic.role !== "MECHANIC") {
+      throw new Error("Mechanic not found");
+    }
+
+    if (mechanic.credits < credits) {
+      throw new Error("Mechanic doesn't have enough credits");
+    }
+
+    const PLATFORM_FEE_PER_CREDIT = 2;
+    const MECHANIC_EARNINGS_PER_CREDIT = 8;
+    const platformFee = credits * PLATFORM_FEE_PER_CREDIT;
+    const netAmount = credits * MECHANIC_EARNINGS_PER_CREDIT;
+
+    const payout = await db.payout.create({
+      data: {
+        mechanicId,
+        credits,
+        amount: credits * 10,
+        platformFee,
+        netAmount,
+        status: "PROCESSING",
+        note: note || null,
+      },
+    });
+
+    revalidatePath("/admin");
+    return { success: true, payout };
+  } catch (error) {
+    console.error("Failed to create payout:", error);
+    throw new Error(`Failed to create payout: ${error.message}`);
   }
 }
 
 export async function getDashboardStats() {
   const isAdmin = await verifyAdmin();
-  if (!isAdmin) throw new Error("Unauthorized");
-
-  const now = new Date();
-  const monthsToShow = 6;
-  const startDate = new Date(now.getFullYear(), now.getMonth() - (monthsToShow - 1), 1);
-
-  const payouts = await db.payout.findMany({
-    where: {
-      status: "PROCESSED",
-      processedAt: {
-        gte: startDate,
-      },
-    },
-    select: {
-      netAmount: true,
-      processedAt: true,
-    },
-  });
-
-  const monthBuckets = Array.from({ length: monthsToShow }).map((_, idx) => {
-    const d = new Date(startDate);
-    d.setMonth(d.getMonth() + idx);
-    const label = d.toLocaleString("default", { month: "short" });
-    return { label, year: d.getFullYear(), month: d.getMonth(), total: 0 };
-  });
-
-  for (const payout of payouts) {
-    const date = new Date(payout.processedAt);
-    const bucket = monthBuckets.find(
-      (b) => b.year === date.getFullYear() && b.month === date.getMonth()
-    );
-    if (bucket) {
-      bucket.total += payout.netAmount;
-    }
+  if (!isAdmin) {
+    return {
+      totalPayoutsReceived: 0,
+      chartData: [],
+    };
   }
 
-  const totalPayoutsReceived = monthBuckets.reduce((sum, b) => sum + b.total, 0);
+  try {
+    const now = new Date();
+    const monthsToShow = 6;
+    const startDate = new Date(now.getFullYear(), now.getMonth() - (monthsToShow - 1), 1);
 
-  return {
-    totalPayoutsReceived,
-    chartData: monthBuckets.map((b) => ({ label: b.label, value: b.total })),
-  };
+    const payouts = await db.payout.findMany({
+      where: {
+        status: "PROCESSED",
+        processedAt: {
+          gte: startDate,
+        },
+      },
+      select: {
+        netAmount: true,
+        processedAt: true,
+      },
+    });
+
+    const monthBuckets = Array.from({ length: monthsToShow }).map((_, idx) => {
+      const d = new Date(startDate);
+      d.setMonth(d.getMonth() + idx);
+      const label = d.toLocaleString("default", { month: "short" });
+      return { label, year: d.getFullYear(), month: d.getMonth(), total: 0 };
+    });
+
+    for (const payout of payouts) {
+      const date = new Date(payout.processedAt);
+      const bucket = monthBuckets.find(
+        (b) => b.year === date.getFullYear() && b.month === date.getMonth()
+      );
+      if (bucket) {
+        bucket.total += payout.netAmount;
+      }
+    }
+
+    const totalPayoutsReceived = monthBuckets.reduce((sum, b) => sum + b.total, 0);
+
+    return {
+      totalPayoutsReceived,
+      chartData: monthBuckets.map((b) => ({ label: b.label, value: b.total })),
+    };
+  } catch (error) {
+    console.error("Failed to fetch dashboard stats:", error);
+    return {
+      totalPayoutsReceived: 0,
+      chartData: [],
+      error: "Database unavailable",
+    };
+  }
 }
 
 export async function getAllBookings() {
@@ -238,10 +397,18 @@ export async function getAllBookings() {
     const bookings = await db.booking.findMany({
       orderBy: { scheduledAt: "desc" },
       include: {
-        customer: true,
-        mechanic: true,
-        service: true,
-        vehicle: true,
+        customer: {
+          select: { name: true, email: true },
+        },
+        mechanic: {
+          select: { name: true, specialty: true },
+        },
+        service: {
+          select: { name: true, basePrice: true },
+        },
+        vehicle: {
+          select: { brand: true, model: true, registrationNo: true },
+        },
       },
       take: 50,
     });
@@ -283,7 +450,7 @@ export async function updateBookingStatus(formData) {
 }
 
 /**
- * Approves a payout request and deducts credits from doctor's account
+ * Approves a payout request and deducts credits from mechanic's account
  */
 export async function approvePayout(formData) {
   const isAdmin = await verifyAdmin();
@@ -296,7 +463,6 @@ export async function approvePayout(formData) {
   }
 
   try {
-    // Get admin user info
     const { userId } = await auth();
     const admin = await db.user.findUnique({
       where: { clerkUserId: userId },
@@ -309,7 +475,7 @@ export async function approvePayout(formData) {
         status: "PROCESSING",
       },
       include: {
-        doctor: true,
+        mechanic: true,
       },
     });
 
@@ -317,9 +483,9 @@ export async function approvePayout(formData) {
       throw new Error("Payout request not found or already processed");
     }
 
-    // Check if doctor has enough credits
-    if (payout.doctor.credits < payout.credits) {
-      throw new Error("Doctor doesn't have enough credits for this payout");
+    // Check if mechanic has enough credits
+    if (payout.mechanic.credits < payout.credits) {
+      throw new Error("Mechanic doesn't have enough credits for this payout");
     }
 
     // Process the payout in a transaction
@@ -336,10 +502,10 @@ export async function approvePayout(formData) {
         },
       });
 
-      // Deduct credits from doctor's account
+      // Deduct credits from mechanic's account
       await tx.user.update({
         where: {
-          id: payout.doctorId,
+          id: payout.mechanicId,
         },
         data: {
           credits: {
@@ -351,7 +517,7 @@ export async function approvePayout(formData) {
       // Create a transaction record for the deduction
       await tx.creditTransaction.create({
         data: {
-          userId: payout.doctorId,
+          userId: payout.mechanicId,
           amount: -payout.credits,
           type: "ADMIN_ADJUSTMENT",
         },

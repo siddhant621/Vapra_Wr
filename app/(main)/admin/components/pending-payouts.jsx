@@ -98,10 +98,10 @@ export function PendingPayouts({ payouts }) {
                         </div>
                         <div className="flex-1">
                           <h3 className="font-medium text-white">
-                            {payout.doctor?.name || "Mechanic"}
+                            {payout.mechanic?.name || "Mechanic"}
                           </h3>
                           <p className="text-sm text-muted-foreground">
-                            {payout.doctor?.specialty}
+                            {payout.mechanic?.specialty}
                           </p>
                           <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-muted-foreground">
                             <div className="flex items-center">
@@ -176,19 +176,19 @@ export function PendingPayouts({ payouts }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Name</p>
-                    <p className="text-white">{selectedPayout.doctor?.name}</p>
+                    <p className="text-white">{selectedPayout.mechanic?.name}</p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Email</p>
-                    <p className="text-white">{selectedPayout.doctor?.email}</p>
+                    <p className="text-white">{selectedPayout.mechanic?.email}</p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Specialty</p>
-                    <p className="text-white">{selectedPayout.doctor?.specialty}</p>
+                    <p className="text-white">{selectedPayout.mechanic?.specialty}</p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Current Credits</p>
-                    <p className="text-white">{selectedPayout.doctor?.credits}</p>
+                    <p className="text-white">{selectedPayout.mechanic?.credits}</p>
                   </div>
                 </div>
               </div>

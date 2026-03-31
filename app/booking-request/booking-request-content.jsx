@@ -23,6 +23,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -52,6 +53,7 @@ export default function BookingRequestContent() {
 
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [showSignupDialog, setShowSignupDialog] = useState(false);
   const [formData, setFormData] = useState({
     vehicleInfo: "",
     issueDescription: "",
@@ -167,11 +169,12 @@ export default function BookingRequestContent() {
 
       toast.success("Booking request submitted! Admin has received it.");
       setSubmitted(true);
+      setShowSignupDialog(true);
       setLoading(false);
 
       setTimeout(() => {
         router.push("/mechanics");
-      }, 2000);
+      }, 5000);
     } catch (error) {
       console.error("Error submitting booking request:", error);
       toast.error("Failed to submit booking request");
@@ -181,34 +184,56 @@ export default function BookingRequestContent() {
 
   if (submitted) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-2xl mx-auto">
-          <Card className="border-emerald-900/20">
-            <CardContent className="pt-12 pb-8">
-              <div className="flex flex-col items-center text-center space-y-6">
-                <div className="bg-emerald-900/20 p-4 rounded-full">
-                  <CheckCircle className="h-12 w-12 text-emerald-500" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-white mb-2">
-                    Request Submitted!
-                  </h2>
-                  <p className="text-muted-foreground max-w-md">
-                    Our admin team will review your{" "}
-                    <span className="text-emerald-400 font-medium">{service}</span>{" "}
-                    service request and contact you at{" "}
-                    <span className="text-white font-medium">{formData.phone}</span>{" "}
-                    to confirm your booking.
+      <>
+        <div className="container mx-auto px-4 py-8">
+          <div className="max-w-2xl mx-auto">
+            <Card className="border-emerald-900/20">
+              <CardContent className="pt-12 pb-8">
+                <div className="flex flex-col items-center text-center space-y-6">
+                  <div className="bg-emerald-900/20 p-4 rounded-full">
+                    <CheckCircle className="h-12 w-12 text-emerald-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white mb-2">
+                      Request Submitted!
+                    </h2>
+                    <p className="text-muted-foreground max-w-md">
+                      Our admin team will review your{" "}
+                      <span className="text-emerald-400 font-medium">{service}</span>{" "}
+                      service request and contact you at{" "}
+                      <span className="text-white font-medium">{formData.phone}</span>{" "}
+                      to confirm your booking.
+                    </p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    We&apos;ll be in touch soon. Redirecting to services...
                   </p>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  We&apos;ll be in touch soon. Redirecting to services...
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
+
+        <Dialog open={showSignupDialog} onOpenChange={setShowSignupDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Enjoyed the fast booking?</DialogTitle>
+              <DialogDescription>
+                You can save time next visit by creating an account.
+                Sign-up now to track requests, get faster responses, and earn credits.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowSignupDialog(false)}>
+                Close
+              </Button>
+              <Link href="/sign-up" className="w-full">
+                <Button className="w-full">Sign Up Now</Button>
+              </Link>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
     );
   }
 

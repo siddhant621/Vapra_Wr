@@ -6,8 +6,9 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  CardDescription,
 } from "@/components/ui/card";
-import { creditBenefits, features, testimonials } from "@/lib/data";
+import { creditBenefits, features, testimonials, servicePlans } from "@/lib/data";
 import { ArrowRight, Check, Wrench } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -141,35 +142,78 @@ export default async function Home() {
             </p>
           </div>
 
-          <div>
-            {/* Pricing Table */}
+          <div className="grid gap-6 md:grid-cols-3">
+            {servicePlans.map((plan) => (
+              <Card
+                key={plan.name}
+                className={`flex flex-col h-full border transition-all ${
+                  plan.popular
+                    ? "border-emerald-600/60 shadow-lg shadow-emerald-600/20 md:scale-105"
+                    : "border-emerald-900/20 hover:border-emerald-900/40"
+                }`}
+              >
+                {plan.popular && (
+                  <Badge className="self-start bg-emerald-600 text-white px-3 py-1 mb-3">
+                    Most Popular
+                  </Badge>
+                )}
 
-            <Card className="mt-12 bg-muted/20 border-orange-900/30">
-              <CardHeader>
-                <CardTitle className="text-xl font-semibold text-white flex items-center">
-                  <Wrench className="h-5 w-5 mr-2 text-orange-400" />
-                  How Our Credit System Works
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-3">
-                  {creditBenefits.map((benefit, index) => {
-                    return (
-                      <li key={index} className="flex items-start">
-                        <div className="mr-3 mt-1 bg-orange-900/20 p-1 rounded-full">
-                          <Check className="h-4 w-4 text-orange-400" />
-                        </div>
-                        <p
-                          className="text-muted-foreground"
-                          dangerouslySetInnerHTML={{ __html: benefit }}
-                        ></p>
+                <CardHeader>
+                  <CardTitle className="text-white">{plan.name}</CardTitle>
+                  <CardDescription>{plan.description}</CardDescription>
+                  <div className="mt-4">
+                    <p className="text-3xl font-bold text-emerald-400">{plan.price}</p>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex flex-col justify-between space-y-6">
+                  <ul className="space-y-2">
+                    {plan.features.map((feature, index) => (
+                      <li key={index} className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <Check className="mt-1 h-4 w-4 text-emerald-400" />
+                        <span>{feature}</span>
                       </li>
-                    );
-                  })}
-                </ul>
-              </CardContent>
-            </Card>
+                    ))}
+                  </ul>
+
+                  <Button
+                    asChild
+                    size="sm"
+                    className={`${
+                      plan.popular
+                        ? "bg-emerald-600 hover:bg-emerald-700"
+                        : "bg-emerald-600/80 hover:bg-emerald-600"
+                    }`}
+                  >
+                    <Link href="/onboarding">Pick Plan</Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
           </div>
+
+          <Card className="mt-10 bg-muted/20 border-orange-900/30">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold text-white flex items-center">
+                <Wrench className="h-5 w-5 mr-2 text-orange-400" />
+                How Our Credit System Works
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-3">
+                {creditBenefits.map((benefit, index) => (
+                  <li key={index} className="flex items-start">
+                    <div className="mr-3 mt-1 bg-orange-900/20 p-1 rounded-full">
+                      <Check className="h-4 w-4 text-orange-400" />
+                    </div>
+                    <p
+                      className="text-muted-foreground"
+                      dangerouslySetInnerHTML={{ __html: benefit }}
+                    ></p>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
         </div>
       </section>
 
