@@ -20,7 +20,7 @@ export default function SliderBanner({ images = [], interval = 3500, alt = "hero
   }
 
   return (
-    <div className="relative h-[400px] lg:h-[500px] rounded-xl overflow-hidden">
+    <div className="relative h-[220px] sm:h-[280px] md:h-[350px] lg:h-[500px] rounded-xl overflow-hidden">
       <Image
         key={images[current]}
         src={`/${images[current]}`}
@@ -29,7 +29,7 @@ export default function SliderBanner({ images = [], interval = 3500, alt = "hero
         priority={current === 0}
         className="object-cover transition-opacity duration-700"
       />
-      <div className="absolute bottom-4 left-4 flex gap-2">
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-2">
         {images.map((_, idx) => (
           <span
             key={idx}
